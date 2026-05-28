@@ -10,11 +10,11 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0d11;--surf:#17171e;--surf2:#1f1f28;--surf3:#27272f;
-  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);
-  --gold:#f5c842;--gold2:#d4a820;
-  --ok:#22c55e;--err:#ef4444;--blue:#3b82f6;
-  --text:#ede9e0;--muted:#888;
+  --bg:#e8f0fe;--surf:#ffffff;--surf2:#f0f4ff;--surf3:#dce6fd;
+  --border:rgba(66,99,183,.15);--border2:rgba(66,99,183,.25);
+  --gold:#1a56db;--gold2:#1447c0;
+  --ok:#16a34a;--err:#dc2626;--blue:#3b82f6;
+  --text:#1e2a4a;--muted:#5a6a8a;
   --r:10px;--r2:6px
 }
 body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
@@ -290,10 +290,30 @@ tr:hover td{background:var(--surf2)}
     </div>
   </div>
 
+  <div id="wa-bulk-wrap" class="hidden card">
+    <div class="card-title">📲 Envío masivo por WhatsApp</div>
+    <p class="muted" style="font-size:12px;margin-bottom:1rem">Hacé clic en cada botón — descarga la imagen y abre WhatsApp listo para enviar. Solo tocás Enviar.</p>
+    <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="btn gold" onclick="startBulkWA()">▶ Iniciar envío secuencial</button>
+      <span class="muted" id="wa-progress" style="font-size:12px;align-self:center"></span>
+    </div>
+    <div id="wa-current" class="hidden" style="background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:1rem;margin-bottom:1rem">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px" id="wa-current-name"></div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="wa-current-info"></div>
+      <div class="btn-row">
+        <button class="btn wa-btn" id="wa-send-btn" onclick="sendCurrentWA()">📤 Descargar imagen y abrir WhatsApp</button>
+        <button class="btn" onclick="skipCurrentWA()">Saltar →</button>
+      </div>
+    </div>
+  </div>
+
   <div id="entries-wrap" class="hidden">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <p class="sec-title" style="margin:0">Listado de entradas</p>
-      <input type="text" id="search" placeholder="Buscar nombre, abono..." style="background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:6px 11px;color:var(--text);font-size:12px;outline:none;width:220px" oninput="renderEntries()"/>
+      <div class="btn-row">
+        <button class="btn sm wa-btn" onclick="showBulkWA()">📲 Envío masivo WhatsApp</button>
+        <input type="text" id="search" placeholder="Buscar nombre, abono..." style="background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:6px 11px;color:var(--text);font-size:12px;outline:none;width:200px" oninput="renderEntries()"/>
+      </div>
     </div>
     <div class="tw"><table>
       <thead><tr><th>#</th><th>Nombre</th><th>Celular</th><th>Abono</th><th>Partido</th><th>Estado</th><th>Acciones</th></tr></thead>
@@ -398,6 +418,10 @@ window.deleteEntry = deleteEntry;
 window.viewEntry = viewEntry;
 window.openWA = openWA;
 window.saveEdit = saveEdit;
+window.showBulkWA = showBulkWA;
+window.startBulkWA = startBulkWA;
+window.sendCurrentWA = sendCurrentWA;
+window.skipCurrentWA = skipCurrentWA;
 window.saveConfig = saveConfig;
 window.useLocal = useLocal;
 
@@ -646,7 +670,7 @@ async function generateAll(){
     const c=document.createElement('canvas');
     await drawCard(e,c);
     // Store as dataURL only for the first few (for preview); rest generated on demand
-    generatedCanvases[e.id]=c.toDataURL('image/png');
+    generatedCanvases[e.id]=c.toDataURL('image/jpeg', 0.92);
     // Free canvas memory immediately
     c.width=0; c.height=0;
     const pct=Math.round((i+1)/entries.length*100);
@@ -677,7 +701,7 @@ async function downloadZip(){
   for(let i=0;i<toProcess.length;i++){
     const e=toProcess[i];
     let dataURL=generatedCanvases[e.id];
-    if(!dataURL){const c=document.createElement('canvas');await drawCard(e,c);dataURL=c.toDataURL('image/png')}
+    if(!dataURL){const c=document.createElement('canvas');await drawCard(e,c);dataURL=c.toDataURL('image/jpeg', 0.92)}
     const base64=dataURL.split(',')[1];
     const safe=e.nombre.replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ0-9 ]/g,'').trim().replace(/\s+/g,'_');
     zip.file(`entrada_${safe}_${e.abono||i+1}.png`,base64,{base64:true});
@@ -733,7 +757,7 @@ function openWA(id){
   if(dataURL){
     // Download the image first so user can attach it
     const a=document.createElement('a');a.href=dataURL;
-    a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.png';a.click();
+    a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';a.click();
   }
   const msg=encodeURIComponent(`Hola ${e.nombre}! 🎫 Adjunto tu entrada para ${e.partido||'el evento'}. Presentá el código QR en el ingreso. No la compartas. Nro Abono: ${e.abono||'-'}`);
   setTimeout(()=>window.open(`https://wa.me/${num}?text=${msg}`,'_blank'),600);
@@ -755,7 +779,7 @@ function viewEntry(id){
 window.downloadOne=function(id){
   const e=entries.find(x=>x.id===id);if(!e)return;
   const d=generatedCanvases[id];if(!d)return;
-  const a=document.createElement('a');a.href=d;a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.png';a.click();
+  const a=document.createElement('a');a.href=d;a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';a.click();
 }
 
 function editEntry(id){
@@ -819,6 +843,67 @@ function exportCSV(){
 function clearLog(){
   if(!confirm('¿Borrar todo el registro de ingresos?'))return;
   scanLog=[];saveLocal();syncLogCloud();updateStats();
+}
+
+// ========= BULK WHATSAPP =========
+let bulkIdx = 0;
+let bulkList = [];
+
+function showBulkWA(){
+  if(!entries.length){alert('Generá las entradas primero');return}
+  bulkList = entries.filter(e=>e.celular);
+  if(!bulkList.length){alert('Ninguna entrada tiene número de celular');return}
+  document.getElementById('wa-bulk-wrap').classList.remove('hidden');
+  document.getElementById('wa-bulk-wrap').scrollIntoView({behavior:'smooth'});
+  document.getElementById('wa-progress').textContent=`0 de ${bulkList.length} enviados`;
+  document.getElementById('wa-current').classList.add('hidden');
+  bulkIdx=0;
+}
+
+function startBulkWA(){
+  if(!bulkList.length){showBulkWA();return}
+  bulkIdx=0;
+  showWACurrent();
+}
+
+function showWACurrent(){
+  if(bulkIdx>=bulkList.length){
+    document.getElementById('wa-current').classList.add('hidden');
+    document.getElementById('wa-progress').textContent=`✅ ¡Todos enviados! (${bulkList.length} de ${bulkList.length})`;
+    return;
+  }
+  const e=bulkList[bulkIdx];
+  document.getElementById('wa-current').classList.remove('hidden');
+  document.getElementById('wa-current-name').textContent=`${bulkIdx+1}. ${e.nombre}`;
+  document.getElementById('wa-current-info').textContent=`Celular: ${e.celular} · Abono: ${e.abono||'-'} · ${e.partido||''}`;
+  document.getElementById('wa-progress').textContent=`${bulkIdx} de ${bulkList.length} enviados`;
+}
+
+function sendCurrentWA(){
+  const e=bulkList[bulkIdx];
+  if(!e)return;
+  // download image
+  const dataURL=generatedCanvases[e.id];
+  if(dataURL){
+    const a=document.createElement('a');
+    a.href=dataURL;
+    a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';
+    a.click();
+  }
+  // open whatsapp
+  let num=e.celular.replace(/\D/g,'');
+  if(!num.startsWith('54')&&num.length<=10)num='54'+num;
+  const msg=encodeURIComponent(`Hola ${e.nombre}! 🎫 Te envío tu entrada para ${e.partido||'el evento'}. Guardá la imagen y presentá el QR en el ingreso. Abono: ${e.abono||'-'}`);
+  setTimeout(()=>{
+    window.open(`https://wa.me/${num}?text=${msg}`,'_blank');
+    bulkIdx++;
+    showWACurrent();
+  },500);
+}
+
+function skipCurrentWA(){
+  bulkIdx++;
+  showWACurrent();
 }
 </script>
 </body>
