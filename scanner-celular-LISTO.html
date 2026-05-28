@@ -141,8 +141,9 @@ async function initFB(){
     });
     onValue(ref(db,'log'), snap=>{
       const data = snap.val();
-      if(data && Array.isArray(data)){
-        scanLog = data;
+      if(data){
+        const arr = Array.isArray(data) ? data : Object.values(data);
+        scanLog = arr;
         localStorage.setItem('scanLog', JSON.stringify(scanLog));
         renderLog();
         updateStats();
@@ -204,11 +205,17 @@ async function validateCode(raw){
   renderLog();
 }
 
-function logScan(entry){
+async function logScan(entry){
   const log = {...entry, at: new Date().toISOString()};
   scanLog.push(log);
   localStorage.setItem('scanLog', JSON.stringify(scanLog));
   renderLog();
+  // sync all logs to Firebase
+  if(db && _fbRef && _fbUpdate){
+    try{
+      await _fbUpdate(_fbRef(db), {log: [...scanLog]});
+    }catch(e){ console.warn('log sync err', e); }
+  }
 }
 
 function showResult(type, title, sub, detail=''){

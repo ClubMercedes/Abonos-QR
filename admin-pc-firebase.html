@@ -457,14 +457,26 @@ async function initFirebase(cfg){
     useCloud = true;
     document.getElementById('sync-dot').style.background='var(--ok)';
     document.getElementById('sync-label').textContent='Firebase conectado';
-    // listen for log updates from scanner
+    // listen for log updates from scanner — always update regardless of active tab
     onValue(ref(db,'log'), snap=>{
       const data = snap.val();
-      if(data && Array.isArray(data)){ scanLog=data; saveLocal(); if(document.getElementById('panel-log').classList.contains('active'))updateStats(); }
+      if(data){
+        // Firebase may return object or array
+        const arr = Array.isArray(data) ? data : Object.values(data);
+        scanLog = arr;
+        saveLocal();
+        updateStats(); // always update, not just when tab is active
+      }
     });
     onValue(ref(db,'entries'), snap=>{
       const data = snap.val();
-      if(data && Array.isArray(data)){ entries=data; saveLocal(); renderEntries(); updateStats(); }
+      if(data){
+        const arr = Array.isArray(data) ? data : Object.values(data);
+        entries = arr;
+        saveLocal();
+        renderEntries();
+        updateStats();
+      }
     });
     showApp();
   }catch(e){
