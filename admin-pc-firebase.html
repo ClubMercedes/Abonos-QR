@@ -10,11 +10,11 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#e8f0fe;--surf:#ffffff;--surf2:#f0f4ff;--surf3:#dce6fd;
-  --border:rgba(66,99,183,.15);--border2:rgba(66,99,183,.25);
+  --bg:#d4d7dc;--surf:#ffffff;--surf2:#eaecef;--surf3:#d4d7dc;
+  --border:rgba(0,0,0,.12);--border2:rgba(0,0,0,.2);
   --gold:#1a56db;--gold2:#1447c0;
   --ok:#16a34a;--err:#dc2626;--blue:#3b82f6;
-  --text:#1e2a4a;--muted:#5a6a8a;
+  --text:#1e2a3a;--muted:#5a6a7a;
   --r:10px;--r2:6px
 }
 body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
@@ -242,7 +242,7 @@ tr:hover td{background:var(--surf2)}
         <div class="card-title">📝 Leyenda inferior</div>
         <div class="field-inline">
           <label>Texto (una línea por renglón)</label>
-          <textarea id="legend" placeholder="Ej: Club Atlético Luján&#10;Temporada 2025/26&#10;No transferible" oninput="schedPreview()"></textarea>
+          <textarea id="legend" placeholder="Ej: Club Mercedes&#10;Temporada 2025/26&#10;No transferible" oninput="schedPreview()"></textarea>
         </div>
         <div class="g2">
           <div class="field-inline"><label>Tamaño (px)</label><input type="number" id="legend-sz" value="11" min="8" max="20" oninput="schedPreview()"/></div>
@@ -316,7 +316,7 @@ tr:hover td{background:var(--surf2)}
       </div>
     </div>
     <div class="tw"><table>
-      <thead><tr><th>#</th><th>Nombre</th><th>Celular</th><th>Abono</th><th>Partido</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <thead><tr><th>#</th><th>Nombre</th><th>Celular</th><th>Abono</th><th>Partido</th><th>Estado</th><th>WhatsApp</th><th>Acciones</th></tr></thead>
       <tbody id="entries-tbody"></tbody>
     </table></div>
   </div>
@@ -337,7 +337,7 @@ tr:hover td{background:var(--surf2)}
       <div class="btn-row"><button class="btn sm" onclick="exportCSV()">⬇ CSV</button><button class="btn err sm" onclick="clearLog()">🗑 Limpiar registro</button></div>
     </div>
     <div class="tw"><table>
-      <thead><tr><th>Nombre</th><th>Abono</th><th>Partido</th><th>Hora ingreso</th></tr></thead>
+      <thead><tr><th></th><th>Nombre</th><th>Abono</th><th>Partido</th><th>Hora ingreso</th><th>Motivo</th></tr></thead>
       <tbody id="log-tbody"></tbody>
     </table></div>
   </div>
@@ -646,7 +646,7 @@ async function generateAll(){
   // REPLACE — don't accumulate
   entries=people.map(p=>({
     id:uid(),nombre:p.nombre,celular:p.celular,abono:p.abono,partido:p.partido,
-    used:false,createdAt:new Date().toISOString()
+    used:false,waSent:false,createdAt:new Date().toISOString()
   }));
   generatedCanvases={};
   saveLocal();
@@ -735,11 +735,12 @@ function renderEntries(){
       <td>${e.abono||'-'}</td>
       <td>${e.partido||'-'}</td>
       <td><span class="badge ${e.used?'used':'avail'}">${e.used?'Usado':'Disponible'}</span></td>
+      <td style="text-align:center;font-size:16px" title="${e.waSent?'Enviado por WhatsApp':'No enviado'}">${e.waSent?'✅':'⬜'}</td>
       <td>
         <div class="btn-row">
           <button class="btn sm" onclick="viewEntry('${e.id}')">👁</button>
           <button class="btn sm" onclick="editEntry('${e.id}')">✏️</button>
-          <button class="btn sm wa-btn" onclick="openWA('${e.id}')">WhatsApp</button>
+          <button class="btn sm wa-btn" onclick="openWA('${e.id}')">${e.waSent?'↩ Reenviar':'WhatsApp'}</button>
           <button class="btn sm err" onclick="deleteEntry('${e.id}')">🗑</button>
         </div>
       </td>
@@ -755,12 +756,15 @@ function openWA(id){
   if(!num.startsWith('54')&&num.length<=10)num='54'+num;
   const dataURL=generatedCanvases[id];
   if(dataURL){
-    // Download the image first so user can attach it
     const a=document.createElement('a');a.href=dataURL;
     a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';a.click();
   }
-  const msg=encodeURIComponent(`Hola ${e.nombre}! 🎫 Adjunto tu entrada para ${e.partido||'el evento'}. Presentá el código QR en el ingreso. No la compartas. Nro Abono: ${e.abono||'-'}`);
-  setTimeout(()=>window.open(`https://wa.me/${num}?text=${msg}`,'_blank'),600);
+  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}`);
+  setTimeout(()=>{
+    window.open(`https://wa.me/${num}?text=${msg}`,'_blank');
+    e.waSent=true;
+    saveLocal();syncCloud();renderEntries();
+  },600);
 }
 
 function viewEntry(id){
@@ -826,15 +830,30 @@ function updateStats(){
   document.getElementById('st-pct').textContent=pct+'%';
   document.getElementById('log-tbody').innerHTML=scanLog.length
     ?[...scanLog].reverse().map(l=>`
-        <tr><td>${l.nombre}</td><td>${l.abono||'-'}</td><td>${l.partido||'-'}</td><td>${new Date(l.at).toLocaleTimeString()}</td></tr>
+        <tr>
+          <td style="text-align:center;font-size:16px" title="${l.valido?'Ingreso válido':'Rechazado'}">${l.valido?'✅':'❌'}</td>
+          <td>${l.nombre}</td>
+          <td>${l.abono||'-'}</td>
+          <td>${l.partido||'-'}</td>
+          <td>${new Date(l.at).toLocaleTimeString()}</td>
+          <td style="font-size:11px;color:var(--muted)">${l.motivo||''}</td>
+        </tr>
       `).join('')
-    :'<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">Sin registros aún</td></tr>';
+    :'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Sin registros aún</td></tr>';
 }
 
 function exportCSV(){
   if(!scanLog.length){alert('No hay registros');return}
-  const rows=[['Nombre','Abono','Partido','Celular','Hora']].concat(
-    scanLog.map(l=>[l.nombre,l.abono||'',l.partido||'',l.celular||'',new Date(l.at).toLocaleString()])
+  const rows=[['Estado','Nombre','Abono','Partido','Celular','Hora','Motivo']].concat(
+    scanLog.map(l=>[
+      l.valido?'Valido':'Rechazado',
+      l.nombre,
+      l.abono||'',
+      l.partido||'',
+      l.celular||'',
+      new Date(l.at).toLocaleString(),
+      l.motivo||''
+    ])
   );
   const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));a.download='registro_ingresos.csv';a.click();
@@ -893,9 +912,12 @@ function sendCurrentWA(){
   // open whatsapp
   let num=e.celular.replace(/\D/g,'');
   if(!num.startsWith('54')&&num.length<=10)num='54'+num;
-  const msg=encodeURIComponent(`Hola ${e.nombre}! 🎫 Te envío tu entrada para ${e.partido||'el evento'}. Guardá la imagen y presentá el QR en el ingreso. Abono: ${e.abono||'-'}`);
+  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}`);
   setTimeout(()=>{
     window.open(`https://wa.me/${num}?text=${msg}`,'_blank');
+    // mark as sent
+    const entry=entries.find(x=>x.id===e.id);
+    if(entry){entry.waSent=true;saveLocal();syncCloud();}
     bulkIdx++;
     showWACurrent();
   },500);
