@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>QR Entradas — Panel Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/qr-creator/dist/qr-creator.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d11;--surf:#17171e;--surf2:#1f1f28;--surf3:#27272f;
+  --border:rgba(255,255,255,.07);--border2:rgba(255,255,255,.13);
+  --gold:#f5c842;--gold2:#d4a820;
+  --ok:#22c55e;--err:#ef4444;--blue:#3b82f6;
+  --text:#ede9e0;--muted:#888;
+  --r:10px;--r2:6px
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
+
+/* CONFIG SCREEN */
+#cfg-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
+.cfg-card{background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:2.5rem;max-width:520px;width:100%}
+.cfg-logo{font-size:28px;font-weight:700;color:var(--gold);margin-bottom:.25rem}
+.cfg-logo span{color:var(--text);font-weight:400}
+.cfg-sub{color:var(--muted);font-size:13px;margin-bottom:2rem}
+.step{display:flex;gap:12px;margin-bottom:1.25rem;align-items:flex-start}
+.step-num{background:var(--gold);color:#000;font-weight:700;font-size:12px;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.step-body{flex:1}
+.step-body p{font-size:13px;color:var(--muted);margin-bottom:6px}
+.step-body a{color:var(--gold);text-decoration:none}
+.step-body a:hover{text-decoration:underline}
+.field label{display:block;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
+.field input{width:100%;background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+.field input:focus{border-color:var(--gold)}
+.field{margin-bottom:1rem}
+
+/* MAIN APP */
+#app{display:none}
+header{background:var(--surf);border-bottom:1px solid var(--border);padding:0 1.5rem;display:flex;align-items:center;gap:1rem;position:sticky;top:0;z-index:100}
+.logo{font-size:17px;font-weight:700;color:var(--gold);padding:.9rem 0;white-space:nowrap}
+.logo span{color:var(--text);font-weight:400;font-size:14px}
+nav{display:flex;gap:0;margin-left:auto}
+.nav-btn{padding:0 16px;height:52px;background:none;border:none;color:var(--muted);font-size:13px;font-weight:500;cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;display:flex;align-items:center;gap:6px;font-family:inherit}
+.nav-btn:hover{color:var(--text)}
+.nav-btn.active{color:var(--gold);border-bottom-color:var(--gold)}
+.cfg-chip{margin-left:auto;font-size:11px;color:var(--muted);padding:.9rem 0;display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+main{max-width:1000px;margin:0 auto;padding:1.5rem}
+.panel{display:none}.panel.active{display:block}
+.sec-title{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:1rem}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:1.25rem;margin-bottom:1rem}
+.card-title{font-size:13px;font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:8px}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--r2);font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--surf2);color:var(--text);transition:all .15s;font-family:inherit;white-space:nowrap}
+.btn:hover{border-color:var(--gold);color:var(--gold)}
+.btn.gold{background:var(--gold);color:#000;border-color:var(--gold)}
+.btn.gold:hover{background:var(--gold2);border-color:var(--gold2)}
+.btn.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+.btn.err{background:var(--err);color:#fff;border-color:var(--err)}
+.btn.sm{padding:5px 11px;font-size:12px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* Upload */
+.drop{border:2px dashed var(--border2);border-radius:var(--r);padding:2rem;text-align:center;cursor:pointer;transition:all .15s}
+.drop:hover,.drop.drag{border-color:var(--gold);background:rgba(245,200,66,.04)}
+.drop-icon{font-size:32px;margin-bottom:8px}
+.drop p{font-size:13px;color:var(--muted)}
+
+/* Fields */
+.field-inline label{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px;display:block}
+.field-inline input,.field-inline textarea,.field-inline select{width:100%;background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:8px 11px;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+.field-inline input:focus,.field-inline textarea:focus{border-color:var(--gold)}
+.field-inline textarea{resize:vertical;min-height:54px}
+.field-inline{margin-bottom:.85rem}
+
+/* Grid */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem}
+
+/* Table */
+.tw{overflow-x:auto;border-radius:var(--r2);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--surf2);padding:9px 13px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
+td{padding:9px 13px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surf2)}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge.used{background:rgba(239,68,68,.15);color:var(--err)}
+.badge.avail{background:rgba(34,197,94,.15);color:var(--ok)}
+.badge.pend{background:rgba(59,130,246,.15);color:var(--blue)}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.5rem}
+.stat{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:1rem;text-align:center}
+.stat-v{font-size:28px;font-weight:700}
+.stat-l{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.8px}
+
+/* Progress */
+.pb{background:var(--surf3);border-radius:20px;height:7px;overflow:hidden;margin:6px 0}
+.pb-fill{height:100%;background:var(--gold);border-radius:20px;transition:width .25s}
+
+/* Hint */
+.hint{background:rgba(245,200,66,.07);border:1px solid rgba(245,200,66,.2);border-radius:var(--r2);padding:9px 13px;font-size:12px;color:#c8a93a;margin-bottom:1rem}
+
+/* Preview canvas */
+#prev-wrap{text-align:center}
+#prev-canvas{border-radius:var(--r2);border:1px solid var(--border);max-width:100%}
+
+/* Color row */
+.crow{display:flex;gap:8px;align-items:center}
+.crow input[type=color]{width:34px;height:34px;border:1px solid var(--border2);border-radius:5px;padding:2px;background:none;cursor:pointer}
+
+/* WA button */
+.wa-btn{background:#25D366;color:#fff;border-color:#25D366;font-size:12px;padding:5px 10px}
+.wa-btn:hover{background:#1da851;border-color:#1da851;color:#fff}
+
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem}
+.modal{background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:1.75rem;max-width:460px;width:100%;position:relative;max-height:90vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:600;margin-bottom:1rem}
+.modal-close{position:absolute;top:14px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1}
+.hidden{display:none!important}
+.mt{margin-top:10px}.mt2{margin-top:1.5rem}
+.muted{color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<!-- ========= CONFIG SCREEN ========= -->
+<div id="cfg-screen">
+  <div class="cfg-card">
+    <div class="cfg-logo">QR<span>Entradas</span> — Panel Admin</div>
+    <div class="cfg-sub">Configuración inicial (una sola vez)</div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <p>Creá un proyecto gratis en <a href="https://console.firebase.google.com" target="_blank">Firebase Console</a> → <strong>Realtime Database</strong> → crear base de datos (modo prueba).</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <p>En Configuración del proyecto → Aplicaciones web → Agregar app. Copiá los datos del objeto <code>firebaseConfig</code>.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <p>Pegá los datos aquí:</p>
+      </div>
+    </div>
+
+    <div class="g2">
+      <div class="field"><label>Database URL</label><input id="cfg-url" placeholder="https://tu-proyecto-default-rtdb.firebaseio.com"/></div>
+      <div class="field"><label>API Key</label><input id="cfg-key" placeholder="AIzaSy..."/></div>
+      <div class="field"><label>Project ID</label><input id="cfg-pid" placeholder="tu-proyecto-id"/></div>
+      <div class="field"><label>App ID</label><input id="cfg-aid" placeholder="1:123456789:web:abc..."/></div>
+    </div>
+    <button class="btn gold" style="width:100%;justify-content:center;margin-top:.5rem" onclick="saveConfig()">Guardar y continuar →</button>
+
+    <p class="muted" style="margin-top:1rem;font-size:11px;text-align:center">
+      También podés usar la app sin Firebase — los datos quedan solo en esta PC.
+      <a href="#" onclick="useLocal();return false;" style="color:var(--gold)">Usar sin nube →</a>
+    </p>
+  </div>
+</div>
+
+<!-- ========= MAIN APP ========= -->
+<div id="app">
+<header>
+  <div class="logo">QR<span>Entradas</span></div>
+  <nav>
+    <button class="nav-btn active" onclick="tab('import')">📥 Importar</button>
+    <button class="nav-btn" onclick="tab('design')">🎨 Diseño</button>
+    <button class="nav-btn" onclick="tab('entries')">🎫 Entradas</button>
+    <button class="nav-btn" onclick="tab('log')">📋 Registro</button>
+  </nav>
+  <div class="cfg-chip"><div class="dot" id="sync-dot" style="background:var(--muted)"></div><span id="sync-label">Sin nube</span></div>
+</header>
+<main>
+
+<!-- IMPORT -->
+<div id="panel-import" class="panel active">
+  <p class="sec-title">Paso 1 — Cargar listado del evento</p>
+  <div class="hint">⚠️ Cada vez que cargás un nuevo Excel <strong>reemplaza</strong> las entradas del evento anterior. El registro de ingresos se mantiene separado.</div>
+
+  <div class="drop" id="drop-zone" onclick="document.getElementById('fi').click()"
+    ondragover="event.preventDefault();this.classList.add('drag')"
+    ondragleave="this.classList.remove('drag')" ondrop="handleDrop(event)">
+    <div class="drop-icon">📊</div>
+    <p><strong style="color:var(--gold)">Clic o arrastrá</strong> tu archivo Excel aquí</p>
+    <p style="margin-top:4px">Columnas requeridas: Nombre · Celular · NroAbono · Partido</p>
+  </div>
+  <input type="file" id="fi" accept=".xlsx,.xls,.csv" class="hidden" onchange="loadFile(this.files[0])"/>
+
+  <div style="margin-top:.75rem;text-align:right">
+    <button class="btn sm" onclick="downloadTemplate()">⬇ Descargar plantilla Excel</button>
+  </div>
+
+  <div id="import-result" class="hidden mt2">
+    <div class="card">
+      <div class="card-title">✅ <span id="imp-count">0</span> personas importadas — <span id="imp-event" style="color:var(--gold)"></span></div>
+      <div class="tw">
+        <table><thead><tr><th>#</th><th>Nombre</th><th>Celular</th><th>Nro Abono</th><th>Partido</th></tr></thead>
+        <tbody id="imp-tbody"></tbody></table>
+      </div>
+      <div class="btn-row mt">
+        <button class="btn gold" onclick="tab('design')">Continuar → Diseño QR</button>
+        <button class="btn err sm" onclick="clearImport()">🗑 Limpiar listado</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DESIGN -->
+<div id="panel-design" class="panel">
+  <p class="sec-title">Paso 2 — Diseño de la entrada</p>
+  <div style="display:flex;gap:1.5rem;flex-wrap:wrap;align-items:flex-start">
+    <div style="flex:1;min-width:260px">
+      <div class="card">
+        <div class="card-title">🖼 Logo</div>
+        <div class="drop" style="padding:1rem" onclick="document.getElementById('logo-fi').click()">
+          <p><strong style="color:var(--gold)">Subir logo</strong> (PNG/JPG con fondo transparente ideal)</p>
+        </div>
+        <input type="file" id="logo-fi" accept="image/*" class="hidden" onchange="loadLogo(this)"/>
+        <div id="logo-name" class="muted mt" style="font-size:11px"></div>
+        <div class="field-inline mt">
+          <label>Altura del logo (px)</label>
+          <input type="number" id="logo-h" value="50" min="20" max="120" oninput="schedPreview()"/>
+        </div>
+        <div class="field-inline">
+          <label>Espaciado bajo el logo (px)</label>
+          <input type="number" id="logo-gap" value="10" min="0" max="40" oninput="schedPreview()"/>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">📝 Leyenda inferior</div>
+        <div class="field-inline">
+          <label>Texto (una línea por renglón)</label>
+          <textarea id="legend" placeholder="Ej: Club Atlético Luján&#10;Temporada 2025/26&#10;No transferible" oninput="schedPreview()"></textarea>
+        </div>
+        <div class="g2">
+          <div class="field-inline"><label>Tamaño (px)</label><input type="number" id="legend-sz" value="11" min="8" max="20" oninput="schedPreview()"/></div>
+          <div class="field-inline"><label>Espaciado sup (px)</label><input type="number" id="legend-gap" value="8" min="0" max="30" oninput="schedPreview()"/></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">🎨 Colores</div>
+        <div class="field-inline"><label>Fondo</label><div class="crow"><input type="color" id="c-bg" value="#ffffff" oninput="schedPreview()"/><span class="muted">Fondo de la tarjeta</span></div></div>
+        <div class="field-inline"><label>Módulos QR</label><div class="crow"><input type="color" id="c-qr" value="#000000" oninput="schedPreview()"/><span class="muted">Color del código QR</span></div></div>
+        <div class="field-inline"><label>Texto</label><div class="crow"><input type="color" id="c-txt" value="#111111" oninput="schedPreview()"/><span class="muted">Nombre, datos, leyenda</span></div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">📐 Tamaño QR</div>
+        <div class="field-inline"><label>Tamaño del QR (px)</label><input type="number" id="qr-sz" value="200" min="120" max="300" step="10" oninput="schedPreview()"/></div>
+      </div>
+    </div>
+    <div style="flex:0 0 auto;min-width:220px">
+      <p class="sec-title">Vista previa</p>
+      <div id="prev-wrap"><canvas id="prev-canvas"></canvas></div>
+      <p class="muted mt" style="font-size:11px;text-align:center">Imagen real que se descarga</p>
+      <div class="btn-row mt" style="justify-content:center">
+        <button class="btn gold mt" onclick="tab('entries')">Continuar → Entradas →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ENTRIES -->
+<div id="panel-entries" class="panel">
+  <p class="sec-title">Paso 3 — Gestionar y enviar entradas</p>
+
+  <div class="card">
+    <div class="card-title">⚡ Generación masiva</div>
+    <p class="muted" id="gen-info">Importá un Excel primero.</p>
+    <div class="btn-row mt">
+      <button class="btn gold" id="btn-gen" onclick="generateAll()" disabled>📦 Generar todas y subir a la nube</button>
+      <button class="btn hidden" id="btn-pause" onclick="togglePause()">⏸ Pausar</button>
+      <button class="btn" onclick="downloadZip()">⬇ Descargar ZIP</button>
+      <button class="btn err sm" onclick="clearAllEntries()">🗑 Borrar todas las entradas</button>
+    </div>
+    <div id="gen-prog" class="hidden mt">
+      <div class="pb"><div class="pb-fill" id="pb-fill" style="width:0%"></div></div>
+      <p class="muted" id="pb-txt" style="font-size:11px;margin-top:3px"></p>
+    </div>
+  </div>
+
+  <div id="entries-wrap" class="hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <p class="sec-title" style="margin:0">Listado de entradas</p>
+      <input type="text" id="search" placeholder="Buscar nombre, abono..." style="background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:6px 11px;color:var(--text);font-size:12px;outline:none;width:220px" oninput="renderEntries()"/>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>#</th><th>Nombre</th><th>Celular</th><th>Abono</th><th>Partido</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <tbody id="entries-tbody"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- LOG -->
+<div id="panel-log" class="panel">
+  <p class="sec-title">Registro de ingresos</p>
+  <div class="stats">
+    <div class="stat"><div class="stat-v" id="st-total">0</div><div class="stat-l">Entradas generadas</div></div>
+    <div class="stat"><div class="stat-v" id="st-used" style="color:var(--ok)">0</div><div class="stat-l">Ingresaron</div></div>
+    <div class="stat"><div class="stat-v" id="st-pend">0</div><div class="stat-l">Pendientes</div></div>
+    <div class="stat"><div class="stat-v" id="st-pct" style="color:var(--gold)">0%</div><div class="stat-l">Asistencia</div></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <div class="card-title" style="margin:0">Historial</div>
+      <div class="btn-row"><button class="btn sm" onclick="exportCSV()">⬇ CSV</button><button class="btn err sm" onclick="clearLog()">🗑 Limpiar registro</button></div>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>Nombre</th><th>Abono</th><th>Partido</th><th>Hora ingreso</th></tr></thead>
+      <tbody id="log-tbody"></tbody>
+    </table></div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- MODAL VIEW/EDIT -->
+<div id="modal" class="modal-bg hidden">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h3 id="modal-title">Entrada</h3>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script type="module">
+// ========= FIREBASE (lazy loaded) =========
+let db = null, fbRef = null;
+let useCloud = false;
+
+// ========= STATE =========
+let people = [];
+let entries = JSON.parse(localStorage.getItem('qrEntries')||'[]');
+let scanLog = JSON.parse(localStorage.getItem('qrLog')||'[]');
+let logoDataURL = null;
+let prevTimer = null;
+let generatedCanvases = {};
+
+function saveLocal(){
+  localStorage.setItem('qrEntries', JSON.stringify(entries));
+  localStorage.setItem('qrLog', JSON.stringify(scanLog));
+}
+
+// cached firebase functions
+let _fbSet = null, _fbRef = null;
+
+async function syncCloud(){
+  if(!useCloud||!db||!_fbSet||!_fbRef) return;
+  try{
+    // Upload only essential fields — NO images (too large)
+    const slim = entries.map(e=>({
+      id:e.id, nombre:e.nombre, celular:e.celular||'',
+      abono:e.abono||'', partido:e.partido||'',
+      used:e.used, createdAt:e.createdAt
+    }));
+    await _fbSet(_fbRef(db,'entries'), slim);
+    console.log('✅ Subido a Firebase:', slim.length, 'entradas');
+  }catch(e){ console.error('Sync error',e); }
+}
+
+async function syncLogCloud(){
+  if(!useCloud||!db||!_fbSet||!_fbRef) return;
+  try{
+    await _fbSet(_fbRef(db,'log'), scanLog);
+  }catch(e){ console.error('Sync log error',e); }
+}
+
+// Expose globals needed by HTML onclick
+window.tab = tab;
+window.handleDrop = handleDrop;
+window.loadFile = loadFile;
+window.downloadTemplate = downloadTemplate;
+window.clearImport = clearImport;
+window.loadLogo = loadLogo;
+window.schedPreview = schedPreview;
+window.generateAll = generateAll;
+window.togglePause = togglePause;
+window.downloadZip = downloadZip;
+window.clearAllEntries = clearAllEntries;
+window.renderEntries = renderEntries;
+window.exportCSV = exportCSV;
+window.clearLog = clearLog;
+window.closeModal = closeModal;
+window.editEntry = editEntry;
+window.deleteEntry = deleteEntry;
+window.viewEntry = viewEntry;
+window.openWA = openWA;
+window.saveEdit = saveEdit;
+window.saveConfig = saveConfig;
+window.useLocal = useLocal;
+
+// ========= CONFIG =========
+function saveConfig(){
+  const url=document.getElementById('cfg-url').value.trim();
+  const key=document.getElementById('cfg-key').value.trim();
+  const pid=document.getElementById('cfg-pid').value.trim();
+  const aid=document.getElementById('cfg-aid').value.trim();
+  if(!url||!key||!pid){alert('Completá al menos Database URL, API Key y Project ID');return}
+  localStorage.setItem('fbCfg',JSON.stringify({url,key,pid,aid}));
+  initFirebase({url,key,pid,aid});
+}
+
+function useLocal(){
+  localStorage.removeItem('fbCfg');
+  showApp();
+}
+
+async function initFirebase(cfg){
+  try{
+    const {initializeApp} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const {getDatabase,ref,set,onValue} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+    const app = initializeApp({
+      apiKey: cfg.key,
+      projectId: cfg.pid,
+      databaseURL: cfg.url,
+      appId: cfg.aid||'web'
+    },'admin');
+    db = getDatabase(app);
+    _fbRef = ref;
+    _fbSet = set;
+    useCloud = true;
+    document.getElementById('sync-dot').style.background='var(--ok)';
+    document.getElementById('sync-label').textContent='Firebase conectado';
+    // listen for log updates from scanner
+    onValue(ref(db,'log'), snap=>{
+      const data = snap.val();
+      if(data && Array.isArray(data)){ scanLog=data; saveLocal(); if(document.getElementById('panel-log').classList.contains('active'))updateStats(); }
+    });
+    onValue(ref(db,'entries'), snap=>{
+      const data = snap.val();
+      if(data && Array.isArray(data)){ entries=data; saveLocal(); renderEntries(); updateStats(); }
+    });
+    showApp();
+  }catch(e){
+    alert('Error conectando Firebase: '+e.message+'\n\nVerificá los datos. Podés continuar sin nube.');
+    showApp();
+  }
+}
+
+function showApp(){
+  document.getElementById('cfg-screen').style.display='none';
+  document.getElementById('app').style.display='block';
+  renderEntries();
+  schedPreview();
+  if(entries.length){document.getElementById('entries-wrap').classList.remove('hidden')}
+}
+
+// on load
+window.addEventListener('load',()=>{
+  const saved = localStorage.getItem('fbCfg');
+  if(saved){try{initFirebase(JSON.parse(saved))}catch(e){showApp()}}
+  else{document.getElementById('cfg-screen').style.display='flex'}
+});
+
+// ========= TABS =========
+function tab(name){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+  const map={import:0,design:1,entries:2,log:3};
+  document.querySelectorAll('.nav-btn')[map[name]].classList.add('active');
+  if(name==='log')updateStats();
+  if(name==='entries'){updateGeneratePanel();renderEntries()}
+  if(name==='design')schedPreview();
+}
+
+// ========= IMPORT =========
+function handleDrop(e){e.preventDefault();e.currentTarget.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)loadFile(f)}
+
+function loadFile(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const data=new Uint8Array(e.target.result);
+    const wb=XLSX.read(data,{type:'array'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+    people=rows.map((r,i)=>{
+      const keys=Object.keys(r);
+      const get=(...names)=>{for(const n of names)for(const k of keys)if(k.toLowerCase().replace(/[\s_]/g,'').includes(n))return String(r[k]||'');return''};
+      return{idx:i,nombre:get('nombre','name'),celular:get('celular','telefono','cel','tel','phone','whatsapp','movil'),abono:get('abono','nroabono','ticket','num','numero'),partido:get('partido','fecha','event','match','jornada')};
+    }).filter(p=>p.nombre);
+    renderImportTable();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderImportTable(){
+  document.getElementById('import-result').classList.remove('hidden');
+  document.getElementById('imp-count').textContent=people.length;
+  const eventName=people[0]?.partido||'';
+  document.getElementById('imp-event').textContent=eventName;
+  document.getElementById('imp-tbody').innerHTML=people.map((p,i)=>`
+    <tr><td>${i+1}</td><td>${p.nombre}</td><td>${p.celular}</td><td>${p.abono}</td><td>${p.partido}</td></tr>
+  `).join('');
+}
+
+function clearImport(){people=[];document.getElementById('import-result').classList.add('hidden')}
+
+function downloadTemplate(){
+  const ws=XLSX.utils.aoa_to_sheet([
+    ['Nombre','Celular','NroAbono','Partido'],
+    ['Juan Pérez','5491123456789','A-001','Partido 1 - 15/06/2025'],
+    ['María García','5491187654321','A-002','Partido 1 - 15/06/2025'],
+    ['Carlos López','5491134567890','A-003','Partido 1 - 15/06/2025'],
+  ]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Entradas');
+  XLSX.writeFile(wb,'plantilla_entradas.xlsx');
+}
+
+// ========= LOGO =========
+function loadLogo(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{logoDataURL=e.target.result;document.getElementById('logo-name').textContent='✅ '+file.name;schedPreview()};
+  reader.readAsDataURL(file);
+}
+
+// ========= DRAW CARD =========
+async function drawCard(person, canvasEl){
+  const bg=document.getElementById('c-bg').value;
+  const qrCol=document.getElementById('c-qr').value;
+  const txtCol=document.getElementById('c-txt').value;
+  const legendTxt=document.getElementById('legend').value.trim();
+  const legendSz=parseInt(document.getElementById('legend-sz').value)||11;
+  const legendGap=parseInt(document.getElementById('legend-gap').value)||8;
+  const logoH=parseInt(document.getElementById('logo-h').value)||50;
+  const logoGap=parseInt(document.getElementById('logo-gap').value)||10;
+  const QR=parseInt(document.getElementById('qr-sz').value)||200;
+  const PAD=20, W=QR+PAD*2;
+  const legendLines=legendTxt?legendTxt.split('\n'):[];
+  const logoBlock=logoDataURL?(logoH+logoGap):0;
+  const nameH=24, subH=18;
+  const legendH=legendLines.length?(legendSz+5)*legendLines.length+legendGap:0;
+  const H=PAD+logoBlock+nameH+subH+8+QR+legendH+PAD;
+  canvasEl.width=W; canvasEl.height=H;
+  const ctx=canvasEl.getContext('2d');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  let y=PAD;
+  if(logoDataURL){
+    await new Promise(res=>{
+      const img=new Image();
+      img.onload=()=>{
+        const a=img.width/img.height;
+        const lw=Math.min(logoH*a,W-PAD*2);
+        ctx.drawImage(img,(W-lw)/2,y,lw,logoH);res();
+      };img.src=logoDataURL;
+    });
+    y+=logoH+logoGap;
+  }
+  ctx.fillStyle=txtCol;
+  ctx.font='bold 14px Segoe UI,sans-serif';
+  ctx.textAlign='center';
+  ctx.fillText(person.nombre,W/2,y+14); y+=nameH;
+  ctx.font='11px Segoe UI,sans-serif';
+  ctx.fillStyle=txtCol+'99';
+  const sub=[person.abono?'Abono: '+person.abono:'',person.partido].filter(Boolean).join('  ·  ');
+  ctx.fillText(sub,W/2,y+12); y+=subH+8;
+  // QR — draw directly to offscreen canvas, no DOM nodes
+  const payload=JSON.stringify({id:person.id,nombre:person.nombre,abono:person.abono,partido:person.partido});
+  const qrCanvas=document.createElement('canvas');
+  qrCanvas.width=QR; qrCanvas.height=QR;
+  QrCreator.render({text:payload,radius:0,ecLevel:'H',fill:qrCol,background:bg,size:QR}, qrCanvas);
+  ctx.drawImage(qrCanvas,(W-QR)/2,y);
+  y+=QR;
+  if(legendLines.length){
+    y+=legendGap;
+    ctx.font=`${legendSz}px Segoe UI,sans-serif`;
+    ctx.fillStyle=txtCol+'cc';
+    for(const line of legendLines){ctx.fillText(line,W/2,y+legendSz);y+=legendSz+5}
+  }
+  return canvasEl;
+}
+
+// ========= PREVIEW =========
+function schedPreview(){
+  clearTimeout(prevTimer);
+  prevTimer=setTimeout(async()=>{
+    const sample=people.length?{...people[0],id:'PREV'}:entries.length?entries[0]:{nombre:'Juan Pérez',abono:'A-001',partido:'Partido 1',id:'PREV'};
+    const c=document.getElementById('prev-canvas');
+    await drawCard(sample,c);
+  },300);
+}
+
+// ========= GENERATE =========
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+
+function updateGeneratePanel(){
+  const info=document.getElementById('gen-info');
+  const btn=document.getElementById('btn-gen');
+  if(people.length){info.textContent=`${people.length} personas listas para generar.`;btn.disabled=false}
+  else if(entries.length){info.textContent=`${entries.length} entradas ya generadas.`;btn.disabled=true}
+  else{info.textContent='Importá un Excel primero.';btn.disabled=true}
+}
+
+let genPaused = false;
+let genRunning = false;
+
+function togglePause(){
+  genPaused = !genPaused;
+  document.getElementById('btn-pause').textContent = genPaused ? '▶ Reanudar' : '⏸ Pausar';
+}
+
+async function generateAll(){
+  if(!people.length){alert('Importá el Excel primero');return}
+  if(genRunning){return}
+  genRunning = true; genPaused = false;
+
+  // REPLACE — don't accumulate
+  entries=people.map(p=>({
+    id:uid(),nombre:p.nombre,celular:p.celular,abono:p.abono,partido:p.partido,
+    used:false,createdAt:new Date().toISOString()
+  }));
+  generatedCanvases={};
+  saveLocal();
+
+  const prog=document.getElementById('gen-prog');
+  const fill=document.getElementById('pb-fill');
+  const txt=document.getElementById('pb-txt');
+  const btnGen=document.getElementById('btn-gen');
+  const btnPause=document.getElementById('btn-pause');
+  prog.classList.remove('hidden');
+  btnGen.disabled=true;
+  btnPause.classList.remove('hidden');
+
+  const BATCH = 3; // process 3 at a time to avoid freezing
+
+  for(let i=0;i<entries.length;i++){
+    // wait while paused
+    while(genPaused){ await new Promise(r=>setTimeout(r,300)); }
+
+    const e=entries[i];
+    const c=document.createElement('canvas');
+    await drawCard(e,c);
+    // Store as dataURL only for the first few (for preview); rest generated on demand
+    generatedCanvases[e.id]=c.toDataURL('image/png');
+    // Free canvas memory immediately
+    c.width=0; c.height=0;
+    const pct=Math.round((i+1)/entries.length*100);
+    fill.style.width=pct+'%';
+    txt.textContent=`Generando ${i+1} de ${entries.length}...`;
+
+    // Every BATCH entries, yield to the browser so it doesn't freeze
+    if((i+1) % BATCH === 0){
+      await new Promise(r=>setTimeout(r,150));
+    }
+  }
+
+  txt.textContent=`✅ ${entries.length} entradas generadas. Subiendo a la nube...`;
+  btnPause.classList.add('hidden');
+  await syncCloud();
+  txt.textContent=`✅ ${entries.length} entradas listas.`;
+  btnGen.disabled=false;
+  genRunning=false;
+  document.getElementById('entries-wrap').classList.remove('hidden');
+  renderEntries();
+}
+
+async function downloadZip(){
+  if(!Object.keys(generatedCanvases).length&&!entries.length){alert('Generá las entradas primero');return}
+  const toProcess=entries.length?entries:[];
+  if(!toProcess.length){alert('No hay entradas');return}
+  const zip=new JSZip();
+  for(let i=0;i<toProcess.length;i++){
+    const e=toProcess[i];
+    let dataURL=generatedCanvases[e.id];
+    if(!dataURL){const c=document.createElement('canvas');await drawCard(e,c);dataURL=c.toDataURL('image/png')}
+    const base64=dataURL.split(',')[1];
+    const safe=e.nombre.replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ0-9 ]/g,'').trim().replace(/\s+/g,'_');
+    zip.file(`entrada_${safe}_${e.abono||i+1}.png`,base64,{base64:true});
+  }
+  const blob=await zip.generateAsync({type:'blob'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='entradas_qr.zip';a.click();
+}
+
+function clearAllEntries(){
+  if(!confirm('¿Borrar TODAS las entradas generadas? Esto no borra el registro de ingresos.'))return;
+  entries=[];generatedCanvases={};saveLocal();syncCloud();
+  document.getElementById('entries-wrap').classList.add('hidden');
+  renderEntries();updateGeneratePanel();
+}
+
+// ========= RENDER ENTRIES TABLE =========
+function renderEntries(){
+  if(!entries.length){document.getElementById('entries-wrap').classList.add('hidden');return}
+  document.getElementById('entries-wrap').classList.remove('hidden');
+  const q=(document.getElementById('search')?.value||'').toLowerCase();
+  const filtered=entries.filter(e=>
+    e.nombre.toLowerCase().includes(q)||
+    (e.abono||'').toLowerCase().includes(q)||
+    (e.partido||'').toLowerCase().includes(q)
+  );
+  document.getElementById('entries-tbody').innerHTML=filtered.map((e,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td>${e.nombre}</td>
+      <td>${e.celular||'-'}</td>
+      <td>${e.abono||'-'}</td>
+      <td>${e.partido||'-'}</td>
+      <td><span class="badge ${e.used?'used':'avail'}">${e.used?'Usado':'Disponible'}</span></td>
+      <td>
+        <div class="btn-row">
+          <button class="btn sm" onclick="viewEntry('${e.id}')">👁</button>
+          <button class="btn sm" onclick="editEntry('${e.id}')">✏️</button>
+          <button class="btn sm wa-btn" onclick="openWA('${e.id}')">WhatsApp</button>
+          <button class="btn sm err" onclick="deleteEntry('${e.id}')">🗑</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ========= ENTRY ACTIONS =========
+function openWA(id){
+  const e=entries.find(x=>x.id===id);if(!e)return;
+  if(!e.celular){alert('Esta persona no tiene número de celular cargado');return}
+  let num=e.celular.replace(/\D/g,'');
+  if(!num.startsWith('54')&&num.length<=10)num='54'+num;
+  const dataURL=generatedCanvases[id];
+  if(dataURL){
+    // Download the image first so user can attach it
+    const a=document.createElement('a');a.href=dataURL;
+    a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.png';a.click();
+  }
+  const msg=encodeURIComponent(`Hola ${e.nombre}! 🎫 Adjunto tu entrada para ${e.partido||'el evento'}. Presentá el código QR en el ingreso. No la compartas. Nro Abono: ${e.abono||'-'}`);
+  setTimeout(()=>window.open(`https://wa.me/${num}?text=${msg}`,'_blank'),600);
+}
+
+function viewEntry(id){
+  const e=entries.find(x=>x.id===id);if(!e)return;
+  const dataURL=generatedCanvases[id];
+  document.getElementById('modal-title').textContent=e.nombre;
+  document.getElementById('modal-body').innerHTML=`
+    ${dataURL?`<div style="text-align:center;margin-bottom:1rem"><img src="${dataURL}" style="max-width:260px;border-radius:8px;border:1px solid var(--border)"/></div>`:'<p class="muted">Generá las entradas para ver la imagen.</p>'}
+    <p class="muted" style="font-size:12px">Abono: ${e.abono} · Partido: ${e.partido} · Celular: ${e.celular||'-'}</p>
+    <p class="muted" style="font-size:12px;margin-top:4px">Estado: <span class="badge ${e.used?'used':'avail'}">${e.used?'Usado':'Disponible'}</span></p>
+    ${dataURL?`<div class="btn-row mt"><button class="btn sm" onclick="downloadOne('${id}')">⬇ Descargar</button><button class="btn sm wa-btn" onclick="openWA('${id}')">Enviar por WhatsApp</button></div>`:''}
+  `;
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+window.downloadOne=function(id){
+  const e=entries.find(x=>x.id===id);if(!e)return;
+  const d=generatedCanvases[id];if(!d)return;
+  const a=document.createElement('a');a.href=d;a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.png';a.click();
+}
+
+function editEntry(id){
+  const e=entries.find(x=>x.id===id);if(!e)return;
+  document.getElementById('modal-title').textContent='Editar — '+e.nombre;
+  document.getElementById('modal-body').innerHTML=`
+    <div class="field-inline"><label>Nombre</label><input id="ed-nombre" value="${e.nombre}"/></div>
+    <div class="field-inline"><label>Celular (con código de país, ej: 5491123456789)</label><input id="ed-celular" value="${e.celular||''}"/></div>
+    <div class="field-inline"><label>Nro Abono</label><input id="ed-abono" value="${e.abono||''}"/></div>
+    <div class="field-inline"><label>Partido</label><input id="ed-partido" value="${e.partido||''}"/></div>
+    <div class="btn-row mt"><button class="btn gold" onclick="saveEdit('${id}')">Guardar</button><button class="btn" onclick="closeModal()">Cancelar</button></div>
+  `;
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+function saveEdit(id){
+  const e=entries.find(x=>x.id===id);if(!e)return;
+  e.nombre=document.getElementById('ed-nombre').value.trim();
+  e.celular=document.getElementById('ed-celular').value.trim();
+  e.abono=document.getElementById('ed-abono').value.trim();
+  e.partido=document.getElementById('ed-partido').value.trim();
+  delete generatedCanvases[id]; // regenerate on next view
+  saveLocal();syncCloud();renderEntries();closeModal();
+}
+
+function deleteEntry(id){
+  if(!confirm('¿Eliminar esta entrada?'))return;
+  entries=entries.filter(x=>x.id!==id);
+  delete generatedCanvases[id];
+  saveLocal();syncCloud();renderEntries();
+  if(!entries.length)document.getElementById('entries-wrap').classList.add('hidden');
+}
+
+function closeModal(){document.getElementById('modal').classList.add('hidden')}
+
+// ========= LOG / STATS =========
+function updateStats(){
+  const total=entries.length;
+  const used=entries.filter(e=>e.used).length;
+  const pct=total?Math.round(used/total*100):0;
+  document.getElementById('st-total').textContent=total;
+  document.getElementById('st-used').textContent=used;
+  document.getElementById('st-pend').textContent=total-used;
+  document.getElementById('st-pct').textContent=pct+'%';
+  document.getElementById('log-tbody').innerHTML=scanLog.length
+    ?[...scanLog].reverse().map(l=>`
+        <tr><td>${l.nombre}</td><td>${l.abono||'-'}</td><td>${l.partido||'-'}</td><td>${new Date(l.at).toLocaleTimeString()}</td></tr>
+      `).join('')
+    :'<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">Sin registros aún</td></tr>';
+}
+
+function exportCSV(){
+  if(!scanLog.length){alert('No hay registros');return}
+  const rows=[['Nombre','Abono','Partido','Celular','Hora']].concat(
+    scanLog.map(l=>[l.nombre,l.abono||'',l.partido||'',l.celular||'',new Date(l.at).toLocaleString()])
+  );
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));a.download='registro_ingresos.csv';a.click();
+}
+
+function clearLog(){
+  if(!confirm('¿Borrar todo el registro de ingresos?'))return;
+  scanLog=[];saveLocal();syncLogCloud();updateStats();
+}
+</script>
+</body>
+</html>
