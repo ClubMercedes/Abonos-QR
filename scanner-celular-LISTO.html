@@ -45,7 +45,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .ms{background:var(--surf);border:1px solid var(--border);border-radius:var(--r2);padding:.75rem;text-align:center}
 .ms-v{font-size:22px;font-weight:700}
 .ms-l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-.log-list{list-style:none;max-height:200px;overflow-y:auto}
+.log-list{list-style:none;max-height:250px;overflow-y:auto}
 .log-list li{padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:6px}
 .log-list li:last-child{border-bottom:none}
 .hidden{display:none!important}
@@ -58,8 +58,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
     <div class="logo">QR<span> Escáner</span></div>
     <div class="conn">
       <div class="dot" id="dot" style="background:var(--muted)"></div>
-      <span id="conn-lbl">Cargando...</span>
-      <button class="btn sm" style="margin-left:8px;padding:4px 10px;font-size:11px" onclick="reloadEntries()">↻</button>
+      <span id="conn-lbl">Conectando...</span>
     </div>
   </div>
 
@@ -102,149 +101,209 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   </div>
 </div>
 
-<script>
-// ======= CONFIG =======
-// URL del archivo entradas.json en GitHub Pages
-const JSON_URL = 'https://clubmercedes.github.io/Abonos-QR/entradas.json';
+<script type="module">
+// ======= FIREBASE CONFIG — hardcoded =======
+const FIREBASE_CFG = {
+  apiKey: "AIzaSyCeZ3JFvOeTaeemI9uQN4kbiUQUjasoOTc",
+  databaseURL: "https://abonos-1c-default-rtdb.firebaseio.com",
+  projectId: "abonos-1c",
+  appId: "1:804032624085:web:e682467181479d1c6ef95c"
+};
 
+let db = null, _fbRef = null, _fbUpdate = null;
 let entries = [];
 let scanLog = JSON.parse(localStorage.getItem('scanLog')||'[]');
 let stream = null, scanInterval = null;
 let lastScan = '', lastScanTime = 0;
 
-// ======= LOAD ENTRIES FROM GITHUB =======
-async function loadEntries(){
+window.startCam = startCam;
+window.stopCam = stopCam;
+window.validateManual = validateManual;
+window.exportCSV = exportCSV;
+
+async function initFB(){
   try{
-    document.getElementById('conn-lbl').textContent='Cargando...';
-    const res = await fetch(JSON_URL + '?t=' + Date.now()); // cache bust
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    entries = await res.json();
-    // merge with local used state
-    const usedIds = new Set(scanLog.map(l=>l.id));
-    entries.forEach(e=>{ if(usedIds.has(e.id)) e.used=true; });
-    document.getElementById('dot').style.background='var(--ok)';
-    document.getElementById('conn-lbl').textContent=entries.length+' entradas cargadas';
-    updateStats();
-  }catch(err){
-    // fallback to localStorage
-    const local = localStorage.getItem('qrEntries');
-    if(local){ entries=JSON.parse(local); document.getElementById('conn-lbl').textContent='Datos locales ('+entries.length+')'; document.getElementById('dot').style.background='var(--gold)'; }
-    else{ document.getElementById('conn-lbl').textContent='Sin datos'; document.getElementById('dot').style.background='var(--err)'; }
-    updateStats();
+    const {initializeApp} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const {getDatabase, ref, onValue, update} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+    const app = initializeApp(FIREBASE_CFG, 'scanner');
+    db = getDatabase(app);
+    _fbRef = ref;
+    _fbUpdate = update;
+    // listen for entries in real time
+    onValue(ref(db,'entries'), snap=>{
+      const data = snap.val();
+      if(data && Array.isArray(data)){
+        // merge with local used state from scanLog
+        const usedIds = new Set(scanLog.filter(l=>l.valido).map(l=>l.id));
+        entries = data.map(e=>({...e, used: e.used || usedIds.has(e.id)}));
+        updateStats();
+      }
+    });
+    onValue(ref(db,'log'), snap=>{
+      const data = snap.val();
+      if(data && Array.isArray(data)){
+        scanLog = data;
+        localStorage.setItem('scanLog', JSON.stringify(scanLog));
+        renderLog();
+        updateStats();
+      }
+    });
+    document.getElementById('dot').style.background = 'var(--ok)';
+    document.getElementById('conn-lbl').textContent = 'Firebase conectado';
+  }catch(e){
+    document.getElementById('dot').style.background = 'var(--err)';
+    document.getElementById('conn-lbl').textContent = 'Error conexion';
+    console.error('Firebase error:', e);
   }
 }
 
-function reloadEntries(){ loadEntries(); }
-
 // ======= VALIDATE =======
-function validateCode(raw){
+async function validateCode(raw){
   let data;
-  try{data=JSON.parse(raw)}catch(e){
-    const log={id:'?',nombre:'QR inválido',abono:'',partido:'',valido:false,motivo:'QR no reconocido',at:new Date().toISOString()};
-    scanLog.push(log);localStorage.setItem('scanLog',JSON.stringify(scanLog));
-    showResult('err','❌ QR inválido','No corresponde a una entrada');renderLog();return;
+  try{ data = JSON.parse(raw); }
+  catch(e){
+    logScan({id:'?', nombre:'QR invalido', abono:'', partido:'', valido:false, motivo:'QR no reconocido'});
+    showResult('err','❌ QR inválido','No corresponde a una entrada');
+    return;
   }
-  const idx=entries.findIndex(e=>e.id===data.id);
-  if(idx===-1){
-    const log={id:data.id||'?',nombre:data.nombre||'Desconocido',abono:data.abono||'',partido:data.partido||'',valido:false,motivo:'ID no registrado',at:new Date().toISOString()};
-    scanLog.push(log);localStorage.setItem('scanLog',JSON.stringify(scanLog));
-    showResult('err','❌ No encontrada','ID no registrado en el sistema');renderLog();return;
+
+  if(!entries.length){
+    showResult('err','❌ Sin datos','Esperá que carguen las entradas de Firebase');
+    return;
   }
-  const entry=entries[idx];
+
+  const idx = entries.findIndex(e => e.id === data.id);
+  if(idx === -1){
+    logScan({id:data.id||'?', nombre:data.nombre||'Desconocido', abono:data.abono||'', partido:data.partido||'', valido:false, motivo:'ID no registrado'});
+    showResult('err','❌ No encontrada','Esta entrada no está registrada');
+    return;
+  }
+
+  const entry = entries[idx];
   if(entry.used){
-    const log={id:entry.id,nombre:entry.nombre,abono:entry.abono||'',partido:entry.partido||'',valido:false,motivo:'Ya habia ingresado',at:new Date().toISOString()};
-    scanLog.push(log);localStorage.setItem('scanLog',JSON.stringify(scanLog));
-    showResult('err','🚫 Ya usada',entry.nombre+' · Ya ingresó',entry.partido||'');renderLog();return;
+    logScan({id:entry.id, nombre:entry.nombre, abono:entry.abono||'', partido:entry.partido||'', valido:false, motivo:'Ya habia ingresado'});
+    showResult('err','🚫 Ya usada', entry.nombre + ' · Ya ingresó', entry.partido||'');
+    return;
   }
-  entries[idx].used=true;
-  const log={id:entry.id,nombre:entry.nombre,abono:entry.abono||'',partido:entry.partido||'',valido:true,motivo:'',at:new Date().toISOString()};
-  scanLog.push(log);
-  localStorage.setItem('scanLog',JSON.stringify(scanLog));
-  showResult('ok','✅ Ingreso válido',entry.nombre,entry.partido||(entry.abono?'Abono: '+entry.abono:''));
+
+  // Mark as used
+  entries[idx].used = true;
+  logScan({id:entry.id, nombre:entry.nombre, abono:entry.abono||'', partido:entry.partido||'', valido:true, motivo:''});
+
+  // Update Firebase
+  if(db && _fbRef && _fbUpdate){
+    try{
+      await _fbUpdate(_fbRef(db, 'entries/'+idx), {used: true});
+      const logArr = [...scanLog];
+      await _fbUpdate(_fbRef(db), {log: logArr});
+    }catch(e){ console.warn('sync err', e); }
+  }
+
+  showResult('ok','✅ Ingreso válido', entry.nombre, entry.partido||(entry.abono?'Abono: '+entry.abono:''));
   updateStats();
   renderLog();
 }
 
-function showResult(type,title,sub,detail=''){
-  const el=document.getElementById('result');
-  el.className='result '+type;
-  el.innerHTML=`<div class="icon">${{ok:'✅',err:'❌',idle:'📷'}[type]}</div><div class="title">${title}</div><div class="sub">${sub}</div>${detail?`<div class="detail">${detail}</div>`:''}`;
-  if(type!=='idle')setTimeout(()=>showResult('idle','Listo para escanear','Activá la cámara o usá el lector QR'),4000);
+function logScan(entry){
+  const log = {...entry, at: new Date().toISOString()};
+  scanLog.push(log);
+  localStorage.setItem('scanLog', JSON.stringify(scanLog));
+  renderLog();
+}
+
+function showResult(type, title, sub, detail=''){
+  const el = document.getElementById('result');
+  el.className = 'result ' + type;
+  el.innerHTML = `<div class="icon">${{ok:'✅',err:'❌',idle:'📷'}[type]||'📷'}</div><div class="title">${title}</div><div class="sub">${sub}</div>${detail?`<div class="detail">${detail}</div>`:''}`;
+  if(type !== 'idle') setTimeout(()=>showResult('idle','Listo para escanear','Activá la cámara o usá el lector QR'), 4000);
 }
 
 function validateManual(){
-  const val=document.getElementById('manual').value.trim();
-  if(!val)return;
+  const val = document.getElementById('manual').value.trim();
+  if(!val) return;
   validateCode(val);
-  document.getElementById('manual').value='';
+  document.getElementById('manual').value = '';
   document.getElementById('manual').focus();
 }
 
 // ======= CAMERA =======
 async function startCam(){
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    document.getElementById('video').srcObject=stream;
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    document.getElementById('video').srcObject = stream;
     document.getElementById('cam-off').classList.add('hidden');
     document.getElementById('cam-on').classList.remove('hidden');
     document.getElementById('btn-stop').classList.remove('hidden');
-    scanInterval=setInterval(()=>scanFrame(document.getElementById('video')),250);
-  }catch(e){alert('No se pudo acceder a la cámara:\n'+e.message)}
+    scanInterval = setInterval(()=>scanFrame(document.getElementById('video')), 250);
+  }catch(e){ alert('No se pudo acceder a la cámara:\n'+e.message); }
 }
+
 function stopCam(){
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
-  if(scanInterval){clearInterval(scanInterval);scanInterval=null}
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  if(scanInterval){ clearInterval(scanInterval); scanInterval=null; }
   document.getElementById('cam-on').classList.add('hidden');
   document.getElementById('cam-off').classList.remove('hidden');
   document.getElementById('btn-stop').classList.add('hidden');
 }
+
 function scanFrame(video){
-  if(video.readyState!==video.HAVE_ENOUGH_DATA)return;
-  const c=document.createElement('canvas');c.width=video.videoWidth;c.height=video.videoHeight;
-  c.getContext('2d').drawImage(video,0,0);
-  const img=c.getContext('2d').getImageData(0,0,c.width,c.height);
-  const code=jsQR(img.data,img.width,img.height);
+  if(video.readyState !== video.HAVE_ENOUGH_DATA) return;
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
+  const code = jsQR(img.data, img.width, img.height);
   if(code){
-    const now=Date.now();
-    if(code.data!==lastScan||now-lastScanTime>3500){lastScan=code.data;lastScanTime=now;validateCode(code.data)}
+    const now = Date.now();
+    if(code.data !== lastScan || now - lastScanTime > 3500){
+      lastScan = code.data; lastScanTime = now;
+      validateCode(code.data);
+    }
   }
 }
 
-// ======= STATS =======
+// ======= STATS & LOG =======
 function updateStats(){
-  const used=entries.filter(e=>e.used).length;
-  document.getElementById('ms-total').textContent=entries.length;
-  document.getElementById('ms-used').textContent=used;
-  document.getElementById('ms-pend').textContent=entries.length-used;
+  const used = entries.filter(e=>e.used).length;
+  document.getElementById('ms-total').textContent = entries.length;
+  document.getElementById('ms-used').textContent = used;
+  document.getElementById('ms-pend').textContent = entries.length - used;
 }
+
 function renderLog(){
-  const el=document.getElementById('log-list');
-  if(!scanLog.length){el.innerHTML='<li style="color:var(--muted)">Sin registros aún</li>';return}
-  el.innerHTML=[...scanLog].reverse().slice(0,30).map(l=>`
+  const el = document.getElementById('log-list');
+  if(!scanLog.length){ el.innerHTML='<li style="color:var(--muted)">Sin registros aún</li>'; return; }
+  el.innerHTML = [...scanLog].reverse().slice(0,30).map(l=>`
     <li>
       <span style="font-size:16px">${l.valido?'✅':'❌'}</span>
-      <span style="flex:1;margin:0 8px"><strong>${l.nombre}</strong> · ${l.abono||'-'} ${l.motivo?'<span style="color:var(--muted);font-size:11px">· '+l.motivo+'</span>':''}</span>
-      <span style="color:var(--muted);white-space:nowrap">${new Date(l.at).toLocaleTimeString()}</span>
+      <span style="flex:1"><strong>${l.nombre}</strong> · ${l.abono||'-'} ${l.motivo?'<span style="color:var(--muted);font-size:11px">· '+l.motivo+'</span>':''}</span>
+      <span style="color:var(--muted);white-space:nowrap;font-size:11px">${new Date(l.at).toLocaleTimeString()}</span>
     </li>
   `).join('');
 }
+
 function exportCSV(){
-  if(!scanLog.length){alert('Sin registros');return}
-  const rows=[['Estado','Nombre','Abono','Partido','Hora','Motivo']].concat(
+  if(!scanLog.length){ alert('Sin registros'); return; }
+  const rows = [['Estado','Nombre','Abono','Partido','Hora','Motivo']].concat(
     scanLog.map(l=>[
       l.valido?'Valido':'Rechazado',
-      l.nombre,
-      l.abono||'',
-      l.partido||'',
+      l.nombre, l.abono||'', l.partido||'',
       new Date(l.at).toLocaleString(),
       l.motivo||''
     ])
   );
-  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));a.download='registro_ingresos.csv';a.click();
+  const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));
+  a.download = 'registro_ingresos.csv';
+  a.click();
 }
 
-window.addEventListener('load',()=>{ loadEntries(); renderLog(); });
+// ======= INIT =======
+window.addEventListener('load', ()=>{
+  initFB();
+  renderLog();
+});
 </script>
 </body>
 </html>
