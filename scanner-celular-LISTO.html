@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>QR Entradas — Escáner</title>
+<script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d11;--surf:#17171e;--surf2:#1f1f28;--border:rgba(255,255,255,.08);--border2:rgba(255,255,255,.14);
+  --gold:#f5c842;--ok:#22c55e;--err:#ef4444;--text:#ede9e0;--muted:#888;--r:12px;--r2:8px
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;max-width:480px;margin:0 auto}
+
+/* CONFIG */
+#cfg{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem}
+.cfg-card{background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:2rem;width:100%}
+.cfg-logo{font-size:22px;font-weight:700;color:var(--gold);margin-bottom:.25rem}
+.cfg-logo span{color:var(--text);font-weight:400}
+.cfg-sub{color:var(--muted);font-size:13px;margin-bottom:1.5rem}
+.field label{display:block;font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.8px;text-transform:uppercase;margin-bottom:5px}
+.field input{width:100%;background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+.field input:focus{border-color:var(--gold)}
+.field{margin-bottom:1rem}
+
+/* MAIN */
+#app{display:none;padding:1rem}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;padding:0 .25rem}
+.logo{font-size:16px;font-weight:700;color:var(--gold)}
+.logo span{color:var(--text);font-weight:400;font-size:13px}
+.conn{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+
+/* Result */
+.result{border-radius:var(--r);padding:1.25rem;margin-bottom:1rem;text-align:center;transition:all .25s}
+.result.idle{background:var(--surf);border:1px solid var(--border)}
+.result.ok{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35)}
+.result.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.35)}
+.result .icon{font-size:40px;margin-bottom:6px;line-height:1}
+.result .title{font-size:20px;font-weight:700;margin-bottom:4px}
+.result .sub{font-size:13px;opacity:.75}
+.result .detail{font-size:12px;margin-top:8px;opacity:.6}
+
+/* Camera */
+.cam-wrap{position:relative;border-radius:var(--r);overflow:hidden;background:#000;margin-bottom:1rem;aspect-ratio:4/3}
+#video{width:100%;height:100%;object-fit:cover;display:block}
+.scan-frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.scan-frame::before{content:'';width:200px;height:200px;border:2px solid var(--gold);border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.45)}
+.scan-line{position:absolute;width:196px;height:2px;background:var(--gold);animation:scan 2s ease-in-out infinite}
+@keyframes scan{0%{top:calc(50% - 98px)}100%{top:calc(50% + 96px)}}
+.cam-off{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:2.5rem;text-align:center;margin-bottom:1rem}
+.cam-off p{color:var(--muted);font-size:13px;margin-bottom:1rem}
+
+/* Manual */
+.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r);padding:1.25rem;margin-bottom:1rem}
+.card-title{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:.75rem;text-transform:uppercase;letter-spacing:.8px}
+.manual-row{display:flex;gap:8px}
+.manual-row input{flex:1;background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:9px 12px;color:var(--text);font-size:13px;font-family:inherit;outline:none}
+.manual-row input:focus{border-color:var(--gold)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 20px;border-radius:var(--r2);font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border2);background:var(--surf2);color:var(--text);transition:all .15s;font-family:inherit;width:100%}
+.btn.gold{background:var(--gold);color:#000;border-color:var(--gold)}
+.btn.err{background:var(--err);color:#fff;border-color:var(--err)}
+.btn:hover{opacity:.9}
+
+/* Stats mini */
+.mini-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:1rem}
+.ms{background:var(--surf);border:1px solid var(--border);border-radius:var(--r2);padding:.75rem;text-align:center}
+.ms-v{font-size:22px;font-weight:700}
+.ms-l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+
+.hidden{display:none!important}
+.mt{margin-top:10px}
+</style>
+</head>
+<body>
+
+<!-- CONFIG SCREEN HIDDEN - credentials hardcoded -->
+<div id="cfg" style="display:none"></div>
+
+<!-- MAIN -->
+<div id="app">
+  <div class="header">
+    <div class="logo">QR<span> Escáner</span></div>
+    <div class="conn"><div class="dot" id="dot"></div><span id="conn-lbl">Sin nube</span></div>
+  </div>
+
+  <div id="result" class="result idle">
+    <div class="icon">📷</div>
+    <div class="title">Listo para escanear</div>
+    <div class="sub">Activá la cámara o usá el lector QR</div>
+  </div>
+
+  <!-- Camera -->
+  <div id="cam-on" class="cam-wrap hidden">
+    <video id="video" autoplay muted playsinline></video>
+    <div class="scan-frame"><div class="scan-line"></div></div>
+  </div>
+  <div id="cam-off" class="cam-off">
+    <p>Cámara desactivada</p>
+    <button class="btn gold" onclick="startCam()">📷 Activar cámara</button>
+  </div>
+  <button id="btn-stop" class="btn err hidden mt" onclick="stopCam()" style="margin-bottom:1rem">⏹ Detener cámara</button>
+
+  <!-- Manual / lector USB -->
+  <div class="card">
+    <div class="card-title">Lector QR / código manual</div>
+    <div class="manual-row">
+      <input type="text" id="manual" placeholder="El lector escribe aquí..." onkeydown="if(event.key==='Enter')validateManual()" autofocus/>
+      <button class="btn gold" style="width:auto;padding:9px 14px" onclick="validateManual()">✓</button>
+    </div>
+  </div>
+
+  <!-- Mini stats -->
+  <div class="mini-stats">
+    <div class="ms"><div class="ms-v" id="ms-total">0</div><div class="ms-l">Total</div></div>
+    <div class="ms"><div class="ms-v" id="ms-used" style="color:var(--ok)">0</div><div class="ms-l">Ingresaron</div></div>
+    <div class="ms"><div class="ms-v" id="ms-pend">0</div><div class="ms-l">Pendientes</div></div>
+  </div>
+</div>
+
+<script type="module">
+let db=null, entriesRef=null, logRef=null;
+let entries=JSON.parse(localStorage.getItem('qrEntries')||'[]');
+let scanLog=JSON.parse(localStorage.getItem('qrLog')||'[]');
+let stream=null, scanInterval=null;
+let lastScan='', lastScanTime=0;
+
+window.startCam=startCam;
+window.stopCam=stopCam;
+window.validateManual=validateManual;
+
+function saveLocal(){localStorage.setItem('qrEntries',JSON.stringify(entries));localStorage.setItem('qrLog',JSON.stringify(scanLog))}
+
+async function initFB(cfg){
+  try{
+    const {initializeApp}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const {getDatabase,ref,onValue,update,push}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+    const app=initializeApp({apiKey:cfg.key,projectId:cfg.pid,databaseURL:cfg.url,appId:cfg.aid||'web'},'scanner');
+    db=getDatabase(app);
+    window._fbRef={ref,update,push,db};
+    // listen for entries
+    onValue(ref(db,'entries'),snap=>{
+      const d=snap.val();
+      if(d&&Array.isArray(d)){entries=d;saveLocal();updateStats()}
+    });
+    onValue(ref(db,'log'),snap=>{
+      const d=snap.val();
+      if(d&&Array.isArray(d)){scanLog=d;saveLocal();updateStats()}
+    });
+    document.getElementById('dot').style.background='var(--ok)';
+    document.getElementById('conn-lbl').textContent='Firebase conectado';
+    showApp();
+  }catch(e){
+    alert('Error conectando: '+e.message+'\n\nUsando datos locales.');
+    showApp();
+  }
+}
+
+function saveConfig(){
+  const url=document.getElementById('cfg-url').value.trim();
+  const key=document.getElementById('cfg-key').value.trim();
+  const pid=document.getElementById('cfg-pid').value.trim();
+  if(!url||!key||!pid){alert('Completá los 3 campos');return}
+  const cfg={url,key,pid};
+  localStorage.setItem('fbCfg',JSON.stringify(cfg));
+  initFB(cfg);
+}
+
+function useLocal(){localStorage.removeItem('fbCfg');showApp()}
+
+function showApp(){
+  document.getElementById('cfg').style.display='none';
+  document.getElementById('app').style.display='block';
+  updateStats();
+}
+
+// Credenciales incorporadas — no requiere configuración manual
+const FIREBASE_CFG = {
+  key: "AIzaSyCeZ3JFvOeTaeemI9uQN4kbiUQUjasoOTc",
+  url: "https://abonos-1c-default-rtdb.firebaseio.com",
+  pid: "abonos-1c",
+  aid: "1:804032624085:web:e682467181479d1c6ef95c"
+};
+window.addEventListener('load',()=>{ initFB(FIREBASE_CFG); });
+
+// ========= VALIDATE =========
+async function validateCode(raw){
+  let data;
+  try{data=JSON.parse(raw)}catch(e){showResult('err','❌ QR inválido','No corresponde a una entrada');return}
+  const idx=entries.findIndex(e=>e.id===data.id);
+  if(idx===-1){showResult('err','❌ No encontrada','Esta entrada no está en el sistema\nID: '+(data.id||'?'));return}
+  const entry=entries[idx];
+  if(entry.used){
+    showResult('err','🚫 Ya usada',entry.nombre+' · Ya ingresó',entry.partido);
+    return;
+  }
+  // mark as used
+  entries[idx].used=true;
+  const logEntry={id:entry.id,nombre:entry.nombre,celular:entry.celular||'',abono:entry.abono||'',partido:entry.partido||'',at:new Date().toISOString()};
+  scanLog.push(logEntry);
+  saveLocal();
+  // sync to firebase
+  if(db&&window._fbRef){
+    try{
+      await window._fbRef.update(window._fbRef.ref(db,'entries/'+idx),{used:true});
+      const logArr=[...scanLog];
+      await window._fbRef.update(window._fbRef.ref(db),{log:logArr});
+    }catch(e){console.warn('sync err',e)}
+  }
+  showResult('ok','✅ Ingreso válido',entry.nombre,entry.partido||(entry.abono?'Abono: '+entry.abono:''));
+  updateStats();
+}
+
+function showResult(type,title,sub,detail=''){
+  const el=document.getElementById('result');
+  el.className='result '+type;
+  const icons={ok:'✅',err:'❌',idle:'📷'};
+  el.innerHTML=`
+    <div class="icon">${icons[type]||'📷'}</div>
+    <div class="title">${title}</div>
+    <div class="sub">${sub}</div>
+    ${detail?`<div class="detail">${detail}</div>`:''}
+  `;
+  if(type!=='idle')setTimeout(()=>showResult('idle','Listo para escanear','Activá la cámara o usá el lector QR'),4000);
+}
+
+function validateManual(){
+  const val=document.getElementById('manual').value.trim();
+  if(!val)return;
+  validateCode(val);
+  document.getElementById('manual').value='';
+  document.getElementById('manual').focus();
+}
+
+// ========= CAMERA =========
+async function startCam(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video=document.getElementById('video');
+    video.srcObject=stream;
+    document.getElementById('cam-off').classList.add('hidden');
+    document.getElementById('cam-on').classList.remove('hidden');
+    document.getElementById('btn-stop').classList.remove('hidden');
+    scanInterval=setInterval(()=>scanFrame(video),250);
+  }catch(e){alert('No se pudo acceder a la cámara:\n'+e.message)}
+}
+
+function stopCam(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}
+  if(scanInterval){clearInterval(scanInterval);scanInterval=null}
+  document.getElementById('cam-on').classList.add('hidden');
+  document.getElementById('cam-off').classList.remove('hidden');
+  document.getElementById('btn-stop').classList.add('hidden');
+}
+
+function scanFrame(video){
+  if(video.readyState!==video.HAVE_ENOUGH_DATA)return;
+  const c=document.createElement('canvas');
+  c.width=video.videoWidth;c.height=video.videoHeight;
+  c.getContext('2d').drawImage(video,0,0);
+  const img=c.getContext('2d').getImageData(0,0,c.width,c.height);
+  const code=jsQR(img.data,img.width,img.height);
+  if(code){
+    const now=Date.now();
+    if(code.data!==lastScan||now-lastScanTime>3500){
+      lastScan=code.data;lastScanTime=now;
+      validateCode(code.data);
+    }
+  }
+}
+
+// ========= STATS =========
+function updateStats(){
+  const total=entries.length;
+  const used=entries.filter(e=>e.used).length;
+  document.getElementById('ms-total').textContent=total;
+  document.getElementById('ms-used').textContent=used;
+  document.getElementById('ms-pend').textContent=total-used;
+}
+</script>
+</body>
+</html>
