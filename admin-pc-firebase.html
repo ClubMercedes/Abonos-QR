@@ -924,59 +924,39 @@ function clearLog(){
   if(!confirm('¿Borrar todo el registro de ingresos?'))return;
   scanLog=[];saveLocal();syncLogCloud();updateStats();
 }
+
 async function resetEvento(){
-  if(!confirm('FINALIZAR EVENTO\n\nEsto va a:\n1. Exportar el CSV con el registro actual\n2. Borrar entradas y registro de la PC\n3. Limpiar Firebase por completo\n\nQuedará todo en cero para el próximo evento.\n\n¿Confirmar?')) return;
-  
-  // 1. Exportar CSV automáticamente antes de borrar
+  if(!confirm('FINALIZAR EVENTO\n\nEsto va a:\n1. Exportar el CSV\n2. Borrar entradas y registro\n3. Avisar al celular para que tambien se limpie\n\nConfirmar?'))return;
   if(scanLog.length){
-    const rows = [['Estado','Nombre','Abono','Partido','Hora','Motivo']].concat(
-      scanLog.map(l=>[
-        l.valido?'Valido':'Rechazado',
-        l.nombre, l.abono||'', l.partido||'',
-        new Date(l.at).toLocaleString(),
-        l.motivo||''
-      ])
-    );
-    const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
-    a.download = 'registro_evento_'+new Date().toLocaleDateString('es-AR').replace(/\//g,'-')+'.csv';
+    const headers=['Estado','Nombre','Abono','Partido','Celular','Fecha y Hora'];
+    const rows=scanLog.map(l=>{
+      const counts=scanLog.filter(x=>x.abono===l.abono&&x.nombre===l.nombre).length;
+      return[counts>1?'RECHAZADO':'VALIDADO',l.nombre,l.abono||'',l.partido||'',l.celular||'',new Date(l.at).toLocaleString()];
+    });
+    const csv=[headers].concat(rows).map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
+    a.download='registro_evento.csv';
     a.click();
   }
-
-  // 2. Limpiar variables locales de la PC
-  entries = [];
-  scanLog = [];
-  generatedCanvases = {};
-  saveLocal();
-
-  // 3. Limpiar Firebase usando tus funciones reales
-  if(useCloud && typeof db !== 'undefined'){
-    try {
-      // Usamos 'set' y 'ref' directamente que son los que importó tu script
-      await set(ref(db, 'entries'), null);
-      await set(ref(db, 'log'), null);
-      
-      // Enviamos la señal de reinicio con la hora actual
-      const ahora = new Date().getTime().toString();
-      await set(ref(db, 'resetAt'), ahora);
-      
-      console.log('✅ Firebase vaciado correctamente.');
-    } catch(e) {
-      console.error('Error al vaciar Firebase:', e);
-      alert('Error al limpiar la nube: ' + e.message);
-    }
+  entries=[];scanLog=[];generatedCanvases={};people=[];
+  localStorage.removeItem('qrEntries');
+  localStorage.removeItem('qrLog');
+  if(useCloud&&db&&fbRef){
+    try{
+      const {set}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+      await set(fbRef(db,'entries'),null);
+      await set(fbRef(db,'log'),null);
+      await set(fbRef(db,'resetAt'),new Date().toISOString());
+    }catch(e){console.warn('reset err',e);}
   }
-
-  // 4. Limpiar interfaz visual de la PC
   document.getElementById('entries-wrap').classList.add('hidden');
-  if(document.getElementById('import-result')) document.getElementById('import-result').classList.add('hidden');
-  
-  renderEntries();
-  updateStats();
-  
-  alert('¡Evento finalizado con éxito! Datos locales y nube borrados.');
+  document.getElementById('import-result').classList.add('hidden');
+  document.getElementById('wa-bulk-wrap').classList.add('hidden');
+  renderEntries();updateStats();tab('import');
+  alert('Evento finalizado. Todo en cero para el proximo evento.');
 }
+
 function resetEvento(){
   if(!confirm('FINALIZAR EVENTO\n\nEsto va a:\n1. Exportar el CSV con el registro actual\n2. Borrar entradas y registro\n3. Limpiar Firebase\n\nQuedar todo en cero para el proximo evento.\n\nConfirmar?'))return;
   // Export CSV first
