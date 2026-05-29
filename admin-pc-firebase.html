@@ -23,7 +23,7 @@
 body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh}
 
 /* CONFIG SCREEN */
-#cfg-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
+#cfg-screen{min-height:100vh;display:none;align-items:center;justify-content:center;padding:2rem}
 .cfg-card{background:var(--surf);border:1px solid var(--border2);border-radius:16px;padding:2.5rem;max-width:520px;width:100%}
 .cfg-logo{font-size:28px;font-weight:700;color:var(--gold);margin-bottom:.25rem}
 .cfg-logo span{color:var(--text);font-weight:400}
@@ -137,6 +137,13 @@ tr:hover td{background:var(--surf2)}
 </head>
 <body>
 
+<div id="loading-screen" style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1rem">
+  <div style="font-size:28px;font-weight:700;color:var(--gold)">QR<span style="color:var(--text);font-weight:400">Entradas</span></div>
+  <div style="color:var(--muted);font-size:13px">Conectando con Firebase...</div>
+  <div style="width:40px;height:40px;border:3px solid var(--border2);border-top-color:var(--gold);border-radius:50%;animation:spin 1s linear infinite"></div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
 <div id="cfg-screen">
   <div class="cfg-card">
     <div class="cfg-logo">QR<span>Entradas</span> — Panel Admin</div>
@@ -185,7 +192,7 @@ tr:hover td{background:var(--surf2)}
     <button class="nav-btn" onclick="tab('entries')">🎫 Entradas</button>
     <button class="nav-btn" onclick="tab('log')">📋 Registro</button>
   </nav>
-  <div class="cfg-chip"><div class="dot" id="sync-dot" style="background:var(--muted)"></div><span id="sync-label">Sin nube</span></div>
+  <div class="cfg-chip"><div class="dot" id="sync-dot" style="background:var(--muted)"></div><span id="sync-label">Sin nube</span> &nbsp;<button class="btn sm" onclick="showCfgScreen()" style="font-size:10px;padding:3px 8px">⚙ Config</button></div>
 </header>
 <main>
 
@@ -427,6 +434,23 @@ window.useLocal = useLocal;
 window.toggleSentStatus = toggleSentStatus;
 
 // ========= CONFIG =========
+function showCfgScreen(){
+  // Pre-fill with saved values
+  const saved = localStorage.getItem('fbCfg');
+  if(saved){
+    try{
+      const c=JSON.parse(saved);
+      document.getElementById('cfg-url').value=c.url||'';
+      document.getElementById('cfg-key').value=c.key||'';
+      document.getElementById('cfg-pid').value=c.pid||'';
+      document.getElementById('cfg-aid').value=c.aid||'';
+    }catch(e){}
+  }
+  document.getElementById('loading-screen').style.display='none';
+  document.getElementById('app').style.display='none';
+  document.getElementById('cfg-screen').style.display='flex';
+}
+
 function saveConfig(){
   const url=document.getElementById('cfg-url').value.trim();
   const key=document.getElementById('cfg-key').value.trim();
@@ -439,13 +463,20 @@ function saveConfig(){
 
 function useLocal(){
   localStorage.removeItem('fbCfg');
+  document.getElementById('loading-screen').style.display='none';
+  document.getElementById('cfg-screen').style.display='none';
   showApp();
 }
 
 async function initFirebase(cfg){
+  document.getElementById('loading-screen').style.display='flex';
+  document.getElementById('cfg-screen').style.display='none';
   try{
-    const {initializeApp} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const {initializeApp,getApps,deleteApp} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
     const {getDatabase,ref,set,onValue} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+    // Delete existing 'admin' app if exists to allow re-init
+    const existing = getApps().find(a=>a.name==='admin');
+    if(existing) await deleteApp(existing);
     const app = initializeApp({
       apiKey: cfg.key,
       projectId: cfg.pid,
@@ -467,10 +498,12 @@ async function initFirebase(cfg){
       const data = snap.val();
       if(data && Array.isArray(data)){ entries=data; saveLocal(); renderEntries(); updateStats(); }
     });
+    document.getElementById('loading-screen').style.display='none';
     showApp();
   }catch(e){
+    document.getElementById('loading-screen').style.display='none';
     alert('Error conectando Firebase: '+e.message+'\n\nVerificá los datos. Podés continuar sin nube.');
-    showApp();
+    showCfgScreen();
   }
 }
 
@@ -482,11 +515,21 @@ function showApp(){
   if(entries.length){document.getElementById('entries-wrap').classList.remove('hidden')}
 }
 
+window.showCfgScreen = showCfgScreen;
+
 // on load
 window.addEventListener('load',()=>{
   const saved = localStorage.getItem('fbCfg');
-  if(saved){try{initFirebase(JSON.parse(saved))}catch(e){showApp()}}
-  else{document.getElementById('cfg-screen').style.display='flex'}
+  if(saved){
+    try{
+      const cfg=JSON.parse(saved);
+      initFirebase(cfg);
+    }catch(e){
+      showCfgScreen();
+    }
+  } else {
+    showCfgScreen();
+  }
 });
 
 // ========= TABS =========
