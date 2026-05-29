@@ -761,33 +761,35 @@ function renderEntries(){
 }
 
 // ========= ENTRY ACTIONS =========
-// ========= CLIPBOARD =========
-async function copyImageToClipboard(dataURL){
-  try{
+// Helper to copy dataURL image to clipboard
+async function copyImageToClipboard(dataURL) {
+  try {
     const response = await fetch(dataURL);
     const blob = await response.blob();
-    await navigator.clipboard.write([new ClipboardItem({[blob.type]: blob})]);
+    await navigator.clipboard.write([
+      new ClipboardItem({ [blob.type]: blob })
+    ]);
     return true;
-  }catch(err){
-    // Plan B: forzar PNG explícito
-    try{
-      const c=document.createElement('canvas');
-      const ctx=c.getContext('2d');
-      const img=new Image();
-      await new Promise((res,rej)=>{
-        img.onload=()=>{
-          c.width=img.width; c.height=img.height;
-          ctx.drawImage(img,0,0);
-          c.toBlob(async(b)=>{
-            await navigator.clipboard.write([new ClipboardItem({"image/png":b})]);
+  } catch (err) {
+    console.error('Error crítico al copiar imagen: ', err);
+    try {
+      const c = document.createElement('canvas');
+      const ctx = c.getContext('2d');
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = () => {
+          c.width = img.width; c.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          c.toBlob(async (b) => {
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]);
             res();
-          },"image/png");
+          }, "image/png");
         };
-        img.onerror=rej; img.src=dataURL;
+        img.onerror = rej; img.src = dataURL;
       });
       return true;
-    }catch(e2){
-      console.warn('Clipboard no disponible, se descarga la imagen');
+    } catch (e2) {
+      alert('Tu navegador bloqueó el copiado automático. Por favor, descarga la imagen y adjúntala manualmente.');
       return false;
     }
   }
@@ -799,22 +801,22 @@ async function openWA(id){
   if(!e.celular){alert('Esta persona no tiene número de celular cargado');return}
   let num=e.celular.replace(/\D/g,'');
   if(!num.startsWith('54')&&num.length<=10)num='54'+num;
+  
   let dataURL=generatedCanvases[id];
   if(!dataURL){
     const c=document.createElement('canvas');
     await drawCard(e,c);
-    dataURL=c.toDataURL('image/jpeg',0.92);
+    dataURL=c.toDataURL('image/jpeg', 0.92);
   }
-  // Intentar copiar al portapapeles
-  const copied = await copyImageToClipboard(dataURL);
-  if(!copied){
-    // Si falla el portapapeles, descargar la imagen
-    const a=document.createElement('a');a.href=dataURL;
-    a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';a.click();
-  }
+  
+  await copyImageToClipboard(dataURL);
+  
   e.waSent=true;
-  saveLocal();syncCloud();renderEntries();
-  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}${copied?' (imagen copiada, pegar con Ctrl+V)':''}`);
+  saveLocal();
+  syncCloud();
+  renderEntries();
+
+  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}`);
   setTimeout(()=>window.open(`https://wa.me/${num}?text=${msg}`,'_blank'),200);
 }
 
@@ -985,18 +987,24 @@ function showWACurrent(){
 async function sendCurrentWA(){
   const e=bulkList[bulkIdx];
   if(!e)return;
+  
   let dataURL=generatedCanvases[e.id];
-  if(!dataURL){const c=document.createElement('canvas');await drawCard(e,c);dataURL=c.toDataURL('image/jpeg',0.92)}
-  const copied = await copyImageToClipboard(dataURL);
-  if(!copied){
-    const a=document.createElement('a');a.href=dataURL;
-    a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';a.click();
+  if(!dataURL){
+    const c=document.createElement('canvas');
+    await drawCard(e,c);
+    dataURL=c.toDataURL('image/jpeg', 0.92);
   }
-  const entry=entries.find(x=>x.id===e.id);
-  if(entry){entry.waSent=true;saveLocal();syncCloud();}
+  
+  await copyImageToClipboard(dataURL);
+  
+  e.waSent = true;
+  saveLocal();
+  syncCloud();
+  renderEntries();
+
   let num=e.celular.replace(/\D/g,'');
   if(!num.startsWith('54')&&num.length<=10)num='54'+num;
-  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}${copied?' (imagen copiada, pegar con Ctrl+V)':''}`);
+  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}`);
   setTimeout(()=>{
     window.open(`https://wa.me/${num}?text=${msg}`,'_blank');
     bulkIdx++;
