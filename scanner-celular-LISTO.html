@@ -160,12 +160,6 @@ async function initFB(){
         scanLog = [];
         localStorage.removeItem('scanLog');
         entries = [];
-        
-        // CORRECCIÓN: Borrar también el log central de Firebase para que no se vuelva a descargar
-        if(db && _fbRef && _fbUpdate){
-          _fbUpdate(_fbRef(db), {log: []}).catch(e=>console.warn('err clear fb log',e));
-        }
-
         renderLog();
         updateStats();
         showResult('idle','Listo para escanear','Evento reiniciado. Esperando nuevas entradas...');
