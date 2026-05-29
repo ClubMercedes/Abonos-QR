@@ -353,21 +353,20 @@ tr:hover td{background:var(--surf2)}
 </div>
 
 <script type="module">
-// ========= FIREBASE (lazy loaded) =========
+// ========= STATE DEFINED FIRST TO AVOID SCOPE ERRORS =========
+window.entries = JSON.parse(localStorage.getItem('qrEntries')||'[]');
+window.scanLog = JSON.parse(localStorage.getItem('qrLog')||'[]');
+
 let db = null, fbRef = null;
 let useCloud = false;
-
-// ========= STATE =========
 let people = [];
-let entries = JSON.parse(localStorage.getItem('qrEntries')||'[]');
-let scanLog = JSON.parse(localStorage.getItem('qrLog')||'[]');
 let logoDataURL = null;
 let prevTimer = null;
 let generatedCanvases = {};
 
 function saveLocal(){
-  localStorage.setItem('qrEntries', JSON.stringify(entries));
-  localStorage.setItem('qrLog', JSON.stringify(scanLog));
+  localStorage.setItem('qrEntries', JSON.stringify(window.entries));
+  localStorage.setItem('qrLog', JSON.stringify(window.scanLog));
 }
 
 // cached firebase functions
@@ -376,7 +375,7 @@ let _fbSet = null, _fbRef = null;
 async function syncCloud(){
   if(!useCloud||!db||!_fbSet||!_fbRef) return;
   try{
-    const slim = entries.map(e=>({
+    const slim = window.entries.map(e=>({
       id:e.id, nombre:e.nombre, celular:e.celular||'',
       abono:e.abono||'', partido:e.partido||'',
       used:e.used, sent:e.sent||false, createdAt:e.createdAt
@@ -389,7 +388,7 @@ async function syncCloud(){
 async function syncLogCloud(){
   if(!useCloud||!db||!_fbSet||!_fbRef) return;
   try{
-    await _fbSet(_fbRef(db,'log'), scanLog);
+    await _fbSet(_fbRef(db,'log'), window.scanLog);
   }catch(e){ console.error('Sync log error',e); }
 }
 
@@ -441,14 +440,24 @@ function useLocal(){
 
 async function initFirebase(cfg){
   try{
-    const {initializeApp} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const {initializeApp, getApps, getApp} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
     const {getDatabase,ref,set,onValue} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
-    const app = initializeApp({
-      apiKey: cfg.key,
-      projectId: cfg.pid,
-      databaseURL: cfg.url,
-      appId: cfg.aid||'web'
-    },'admin');
+    
+    let app;
+    const existingApps = getApps();
+    const adminApp = existingApps.find(a => a.name === 'admin');
+    
+    if (adminApp) {
+      app = adminApp;
+    } else {
+      app = initializeApp({
+        apiKey: cfg.key,
+        projectId: cfg.pid,
+        databaseURL: cfg.url,
+        appId: cfg.aid||'web'
+      },'admin');
+    }
+    
     db = getDatabase(app);
     _fbRef = ref;
     _fbSet = set;
@@ -458,14 +467,15 @@ async function initFirebase(cfg){
     
     onValue(ref(db,'log'), snap=>{
       const data = snap.val();
-      if(data && Array.isArray(data)){ scanLog=data; saveLocal(); if(document.getElementById('panel-log').classList.contains('active'))updateStats(); }
+      if(data && Array.isArray(data)){ window.scanLog=data; saveLocal(); if(document.getElementById('panel-log').classList.contains('active'))updateStats(); }
     });
     onValue(ref(db,'entries'), snap=>{
       const data = snap.val();
-      if(data && Array.isArray(data)){ entries=data; saveLocal(); renderEntries(); updateStats(); }
+      if(data && Array.isArray(data)){ window.entries=data; saveLocal(); renderEntries(); updateStats(); }
     });
     showApp();
   }catch(e){
+    console.error(e);
     alert('Error conectando Firebase: '+e.message+'\n\nVerificá los datos. Podés continuar sin nube.');
     showApp();
   }
@@ -476,7 +486,7 @@ function showApp(){
   document.getElementById('app').style.display='block';
   renderEntries();
   schedPreview();
-  if(entries.length){document.getElementById('entries-wrap').classList.remove('hidden')}
+  if(window.entries.length){document.getElementById('entries-wrap').classList.remove('hidden')}
 }
 
 // on load
@@ -611,9 +621,9 @@ async function drawCard(person, canvasEl){
 function schedPreview(){
   clearTimeout(prevTimer);
   prevTimer=setTimeout(async()=>{
-    const sample=people.length?{...people[0],id:'PREV'}:entries.length?entries[0]:{nombre:'Juan Pérez',abono:'A-001',partido:'Partido 1',id:'PREV'};
+    const sample=people.length?{...people[0],id:'PREV'}:window.entries.length?window.entries[0]:{nombre:'Juan Pérez',abono:'A-001',partido:'Partido 1',id:'PREV'};
     const c=document.getElementById('prev-canvas');
-    await drawCard(sample,c);
+    if(c) await drawCard(sample,c);
   },300);
 }
 
@@ -624,7 +634,7 @@ function updateGeneratePanel(){
   const info=document.getElementById('gen-info');
   const btn=document.getElementById('btn-gen');
   if(people.length){info.textContent=`${people.length} personas listas para generar.`;btn.disabled=false}
-  else if(entries.length){info.textContent=`${entries.length} entradas ya generadas.`;btn.disabled=true}
+  else if(window.entries.length){info.textContent=`${window.entries.length} entradas ya generadas.`;btn.disabled=true}
   else{info.textContent='Importá un Excel primero.';btn.disabled=true}
 }
 
@@ -641,7 +651,7 @@ async function generateAll(){
   if(genRunning){return}
   genRunning = true; genPaused = false;
 
-  entries=people.map(p=>({
+  window.entries=people.map(p=>({
     id:uid(),nombre:p.nombre,celular:p.celular,abono:p.abono,partido:p.partido,
     used:false,sent:false,createdAt:new Date().toISOString()
   }));
@@ -659,90 +669,70 @@ async function generateAll(){
 
   const BATCH = 3;
 
-  for(let i=0;i<entries.length;i++){
+  for(let i=0;i<window.entries.length;i++){
     while(genPaused){ await new Promise(r=>setTimeout(r,300)); }
 
-    const e=entries[i];
+    const e=window.entries[i];
     const c=document.createElement('canvas');
     await drawCard(e,c);
     generatedCanvases[e.id]=c.toDataURL('image/jpeg', 0.92);
     c.width=0; c.height=0;
-    const pct=Math.round((i+1)/entries.length*100);
+    const pct=Math.round((i+1)/window.entries.length*100);
     fill.style.width=pct+'%';
-    txt.textContent=`Generando ${i+1} de ${entries.length}...`;
+    txt.textContent=`Generando ${i+1} de ${window.entries.length}...`;
 
     if((i+1) % BATCH === 0){
-      await new Promise(r=>setTimeout(r,150));
+      await new Promise(res=>setTimeout(res, 60));
     }
   }
 
-  txt.textContent=`✅ ${entries.length} entradas generadas. Subiendo a la nube...`;
-  btnPause.classList.add('hidden');
+  genRunning = false;
+  btnGen.disabled = false;
+  document.getElementById('btn-pause').classList.add('hidden');
+  prog.classList.add('hidden');
+
+  saveLocal();
   await syncCloud();
-  txt.textContent=`✅ ${entries.length} entradas listas.`;
-  btnGen.disabled=false;
-  genRunning=false;
+
   document.getElementById('entries-wrap').classList.remove('hidden');
+  updateGeneratePanel();
   renderEntries();
+  alert('¡Todas las entradas fueron generadas con éxito!');
 }
 
-async function downloadZip(){
-  if(!Object.keys(generatedCanvases).length&&!entries.length){alert('Generá las entradas primero');return}
-  const toProcess=entries.length?entries:[];
-  if(!toProcess.length){alert('No hay entradas');return}
-  const zip=new JSZip();
-  for(let i=0;i<toProcess.length;i++){
-    const e=toProcess[i];
-    let dataURL=generatedCanvases[e.id];
-    if(!dataURL){const c=document.createElement('canvas');await drawCard(e,c);dataURL=c.toDataURL('image/jpeg', 0.92)}
-    const base64=dataURL.split(',')[1];
-    const safe=e.nombre.replace(/[^a-zA-ZáéíóúñÁÉÍÓÚÑ0-9 ]/g,'').trim().replace(/\s+/g,'_');
-    zip.file(`entrada_${safe}_${e.abono||i+1}.png`,base64,{base64:true});
-  }
-  const blob=await zip.generateAsync({type:'blob'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='entradas_qr.zip';a.click();
-}
-
-function clearAllEntries(){
-  if(!confirm('¿Borrar TODAS las entradas generadas? Esto no borra el registro de ingresos.'))return;
-  entries=[];generatedCanvases={};saveLocal();syncCloud();
-  document.getElementById('entries-wrap').classList.add('hidden');
-  renderEntries();updateGeneratePanel();
-}
-
-function toggleSentStatus(id, checkbox) {
-  const e = entries.find(x => x.id === id);
-  if (e) {
-    e.sent = checkbox.checked;
-    saveLocal();
-    syncCloud();
-  }
-}
-
-// ========= RENDER ENTRIES TABLE =========
 function renderEntries(){
-  if(!entries.length){document.getElementById('entries-wrap').classList.add('hidden');return}
-  document.getElementById('entries-wrap').classList.remove('hidden');
-  const q=(document.getElementById('search')?.value||'').toLowerCase();
-  const filtered=entries.filter(e=>
-    e.nombre.toLowerCase().includes(q)||
-    (e.abono||'').toLowerCase().includes(q)||
-    (e.partido||'').toLowerCase().includes(q)
-  );
-  document.getElementById('entries-tbody').innerHTML=filtered.map((e,i)=>`
-    <tr>
+  const q = document.getElementById('search').value.toLowerCase().trim();
+  const tbody = document.getElementById('entries-tbody');
+  if(!tbody) return;
+  
+  const filtered = window.entries.filter(e => {
+    return e.nombre.toLowerCase().includes(q) || 
+           (e.abono && e.abono.toLowerCase().includes(q)) || 
+           (e.partido && e.partido.toLowerCase().includes(q));
+  });
+
+  if(!filtered.length){
+    tbody.innerHTML = `<tr><td colspan="8" class="p-4 text-center text-gray-400 italic">No se encontraron entradas</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map((e, i) => `
+    <tr class="${e.used?'bg-red-50/30':''}">
       <td>${i+1}</td>
-      <td style="text-align:center"><input type="checkbox" ${e.sent?'checked':''} onclick="toggleSentStatus('${e.id}', this)" style="transform: scale(1.2); cursor:pointer;"></td>
-      <td>${e.nombre}</td>
-      <td>${e.celular||'-'}</td>
-      <td>${e.abono||'-'}</td>
-      <td>${e.partido||'-'}</td>
-      <td><span class="badge ${e.used?'used':'avail'}">${e.used?'Usado':'Disponible'}</span></td>
+      <td class="text-center">
+        <input type="checkbox" ${e.sent?'checked':''} onchange="toggleSentStatus('${e.id}', this.checked)"/>
+      </td>
+      <td class="font-semibold">${e.nombre}</td>
+      <td class="muted">${e.celular||'-'}</td>
+      <td><span class="badge pend">${e.abono||'-'}</span></td>
+      <td class="muted" style="font-size:11px">${e.partido||'-'}</td>
+      <td>
+        <span class="badge ${e.used?'used':'avail'}">${e.used?'INGRESÓ':'DISPO'}</span>
+      </td>
       <td>
         <div class="btn-row">
-          <button class="btn sm" onclick="viewEntry('${e.id}')">👁</button>
-          <button class="btn sm" onclick="editEntry('${e.id}')">✏️</button>
-          <button class="btn sm wa-btn" onclick="openWA('${e.id}')">WhatsApp</button>
+          <button class="btn sm" onclick="viewEntry('${e.id}')">👁 Ver</button>
+          <button class="btn sm wa-btn" onclick="openWA('${e.id}')">📲 Enviar</button>
           <button class="btn sm err" onclick="deleteEntry('${e.id}')">🗑</button>
         </div>
       </td>
@@ -750,296 +740,169 @@ function renderEntries(){
   `).join('');
 }
 
-// Helper to copy dataURL image to clipboard
-async function copyImageToClipboard(dataURL) {
-  try {
-    const response = await fetch(dataURL);
-    const blob = await response.blob();
-    
-    // Forzamos a que el navegador lo procese como un elemento de portapapeles válido
-    await navigator.clipboard.write([
-      new ClipboardItem({ [blob.type]: blob })
-    ]);
-    return true;
-  } catch (err) {
-    console.error('Error crítico al copiar imagen: ', err);
-    // Intentar un plan B si falla (algunos navegadores exigen PNG explícito)
-    try {
-      const c = document.createElement('canvas');
-      const ctx = c.getContext('2d');
-      const img = new Image();
-      await new Promise((res, rej) => {
-        img.onload = () => {
-          c.width = img.width; c.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          c.toBlob(async (b) => {
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]);
-            res();
-          }, "image/png");
-        };
-        img.onerror = rej; img.src = dataURL;
-      });
-      return true;
-    } catch (e2) {
-      alert('Tu navegador bloqueó el copiado automático. Por favor, descarga la imagen y adjúntala manualmente.');
-      return false;
-    }
+function toggleSentStatus(id, isChecked){
+  const e = window.entries.find(x=>x.id===id);
+  if(e){
+    e.sent = isChecked;
+    saveLocal();
+    syncCloud();
   }
-}
-
-// ========= ENTRY ACTIONS =========
-async function openWA(id){
-  const e=entries.find(x=>x.id===id);if(!e)return;
-  if(!e.celular){alert('Esta persona no tiene número de celular cargado');return}
-  let num=e.celular.replace(/\D/g,'');
-  if(!num.startsWith('54')&&num.length<=10)num='54'+num;
-  
-  let dataURL=generatedCanvases[id];
-  if(!dataURL){
-    const c=document.createElement('canvas');
-    await drawCard(e,c);
-    dataURL=c.toDataURL('image/jpeg', 0.92);
-  }
-  
-  // Copy image to clipboard so user can just Ctrl+V
-  await copyImageToClipboard(dataURL);
-  
-  e.sent = true;
-  saveLocal();
-  syncCloud();
-  renderEntries();
-
-  const msg=encodeURIComponent(`Hola ${e.nombre}! Adjunto tu entrada para ${e.partido||'el evento'}. Presentá el código QR en el ingreso. No la compartas. Nro Abono: ${e.abono||'-'}`);
-  setTimeout(()=>window.open(`https://wa.me/${num}?text=${msg}`,'_blank'),200);
 }
 
 function viewEntry(id){
-  const e=entries.find(x=>x.id===id);if(!e)return;
-  const dataURL=generatedCanvases[id];
-  document.getElementById('modal-title').textContent=e.nombre;
-  document.getElementById('modal-body').innerHTML=`
-    ${dataURL?`<div style="text-align:center;margin-bottom:1rem"><img src="${dataURL}" style="max-width:260px;border-radius:8px;border:1px solid var(--border)"/></div>`:'<p class="muted">Generá las entradas para ver la imagen.</p>'}
-    <p class="muted" style="font-size:12px">Abono: ${e.abono} · Partido: ${e.partido} · Celular: ${e.celular||'-'}</p>
-    <p class="muted" style="font-size:12px;margin-top:4px">Estado: <span class="badge ${e.used?'used':'avail'}">${e.used?'Usado':'Disponible'}</span></p>
-    ${dataURL?`<div class="btn-row mt"><button class="btn sm" onclick="downloadOne('${id}')">⬇ Descargar</button><button class="btn sm wa-btn" onclick="openWA('${id}')">Enviar por WhatsApp</button></div>`:''}
+  const e = window.entries.find(x=>x.id===id);
+  if(!e)return;
+  document.getElementById('modal-title').textContent = e.nombre;
+  const body = document.getElementById('modal-body');
+  body.innerHTML = `
+    <div style="text-align:center">
+      <canvas id="modal-canvas" style="max-width:100%;border:1px solid var(--border)"></canvas>
+      <div class="btn-row mt" style="justify-content:center">
+        <button class="btn gold" onclick="downloadSingle('${e.id}')">⬇ Descargar Imagen</button>
+      </div>
+    </div>
   `;
   document.getElementById('modal').classList.remove('hidden');
+  setTimeout(async()=>{
+    const c = document.getElementById('modal-canvas');
+    if(c) await drawCard(e, c);
+  }, 50);
 }
 
-window.downloadOne=function(id){
-  const e=entries.find(x=>x.id===id);if(!e)return;
-  const d=generatedCanvases[id];if(!d)return;
-  const a=document.createElement('a');a.href=d;a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';a.click();
-}
-
-function editEntry(id){
-  const e=entries.find(x=>x.id===id);if(!e)return;
-  document.getElementById('modal-title').textContent='Editar — '+e.nombre;
-  document.getElementById('modal-body').innerHTML=`
-    <div class="field-inline"><label>Nombre</label><input id="ed-nombre" value="${e.nombre}"/></div>
-    <div class="field-inline"><label>Celular (con código de país, ej: 5491123456789)</label><input id="ed-celular" value="${e.celular||''}"/></div>
-    <div class="field-inline"><label>Nro Abono</label><input id="ed-abono" value="${e.abono||''}"/></div>
-    <div class="field-inline"><label>Partido</label><input id="ed-partido" value="${e.partido||''}"/></div>
-    <div class="btn-row mt"><button class="btn gold" onclick="saveEdit('${id}')">Guardar</button><button class="btn" onclick="closeModal()">Cancelar</button></div>
-  `;
-  document.getElementById('modal').classList.remove('hidden');
-}
-
-function saveEdit(id){
-  const e=entries.find(x=>x.id===id);if(!e)return;
-  e.nombre=document.getElementById('ed-nombre').value.trim();
-  e.celular=document.getElementById('ed-celular').value.trim();
-  e.abono=document.getElementById('ed-abono').value.trim();
-  e.partido=document.getElementById('ed-partido').value.trim();
-  delete generatedCanvases[id];
-  saveLocal();syncCloud();renderEntries();closeModal();
-}
-
-function deleteEntry(id){
-  if(!confirm('¿Eliminar esta entrada?'))return;
-  entries=entries.filter(x=>x.id!==id);
-  delete generatedCanvases[id];
-  saveLocal();syncCloud();renderEntries();
-  if(!entries.length)document.getElementById('entries-wrap').classList.add('hidden');
-}
-
-function closeModal(){document.getElementById('modal').classList.add('hidden')}
-
-// ========= LOG / STATS =========
-function updateStats(){
-  const total=entries.length;
-  const used=entries.filter(e=>e.used).length;
-  const pct=total?Math.round(used/total*100):0;
-  document.getElementById('st-total').textContent=total;
-  document.getElementById('st-used').textContent=used;
-  document.getElementById('st-pend').textContent=total-used;
-  document.getElementById('st-pct').textContent=pct+'%';
-  
-  document.getElementById('log-tbody').innerHTML=scanLog.length
-    ?[...scanLog].reverse().map(l=>{
-        // Check if the QR has multiple logs (rejected/warning status)
-        const counts = scanLog.filter(x => x.abono === l.abono && x.nombre === l.nombre).length;
-        const isDuplicate = counts > 1;
-        const indicator = isDuplicate ? '<span class="status-indicator invalid">❌</span>' : '<span class="status-indicator valid">🟢</span>';
-        return `<tr>
-          <td style="text-align:center">${indicator}</td>
-          <td>${l.nombre}</td>
-          <td>${l.abono||'-'}</td>
-          <td>${l.partido||'-'}</td>
-          <td>${new Date(l.at).toLocaleTimeString()}</td>
-        </tr>`;
-      }).join('')
-    :'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Sin registros aún</td></tr>';
-}
-
-function exportCSV(){
-  if(!scanLog.length){alert('No hay registros');return}
-  const headers = ['Estado', 'Nombre', 'Abono', 'Partido', 'Celular', 'Fecha y Hora'];
-  const rows = scanLog.map(l => {
-    const counts = scanLog.filter(x => x.abono === l.abono && x.nombre === l.nombre).length;
-    const estadoText = counts > 1 ? 'RECHAZADO/DUPLICADO' : 'VALIDADO';
-    return [
-      estadoText,
-      l.nombre,
-      l.abono || '',
-      l.partido || '',
-      l.celular || '',
-      new Date(l.at).toLocaleString()
-    ];
-  });
-  
-  // Format as explicit separate column structures using exact delimiter standard
-  const csvContent = [headers].concat(rows)
-    .map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','))
-    .join('\n');
-    
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['\uFEFF' + csvContent], {type:'text/csv;charset=utf-8;'}));
-  a.download='registro_ingresos.csv';
+async function downloadSingle(id){
+  const e = window.entries.find(x=>x.id===id);
+  if(!e)return;
+  const c = document.createElement('canvas');
+  await drawCard(e, c);
+  const a = document.createElement('a');
+  a.download = `entrada_${e.nombre.replace(/\s+/g,'_')}.jpg`;
+  a.href = c.toDataURL('image/jpeg', 0.95);
   a.click();
 }
 
-function clearLog(){
-  if(!confirm('¿Borrar todo el registro de ingresos?'))return;
-  scanLog=[];saveLocal();syncLogCloud();updateStats();
+async function openWA(id){
+  const e = window.entries.find(x=>x.id===id);
+  if(!e)return;
+  const c = document.createElement('canvas');
+  await drawCard(e, c);
+  await copyImageToClipboard(c.toDataURL('image/jpeg', 0.92));
+  
+  e.sent = true;
+  saveLocal();
+  syncCloud();
+  renderEntries();
+
+  let num = e.celular.replace(/\D/g,'');
+  if(!num.startsWith('54') && num.length <= 10) num = '54' + num;
+  const msg = encodeURIComponent(`Hola ${e.nombre}! Te envío tu entrada con QR para el partido. Recordá presentarla en el ingreso.`);
+  window.open(`https://api.whatsapp.com/send?phone=${num}&text=${msg}`, '_blank');
 }
 
-async function resetEvento(){
-  if(!confirm('FINALIZAR EVENTO\n\nEsto va a:\n1. Exportar el CSV\n2. Borrar entradas y registro\n3. Avisar al celular para que tambien se limpie\n\nConfirmar?'))return;
-  if(scanLog.length){
-    const headers=['Estado','Nombre','Abono','Partido','Celular','Fecha y Hora'];
-    const rows=scanLog.map(l=>{
-      const counts=scanLog.filter(x=>x.abono===l.abono&&x.nombre===l.nombre).length;
-      return[counts>1?'RECHAZADO':'VALIDADO',l.nombre,l.abono||'',l.partido||'',l.celular||'',new Date(l.at).toLocaleString()];
-    });
-    const csv=[headers].concat(rows).map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
-    a.download='registro_evento.csv';
-    a.click();
+async function copyImageToClipboard(dataURL){
+  try {
+    const res = await fetch(dataURL);
+    const blob = await res.blob();
+    await navigator.clipboard.write([
+      new ClipboardItem({ [blob.type]: blob })
+    ]);
+  } catch(err) {
+    console.error('No se pudo copiar al portapapeles', err);
   }
-  entries=[];scanLog=[];generatedCanvases={};people=[];
-  localStorage.removeItem('qrEntries');
-  localStorage.removeItem('qrLog');
-  if(useCloud&&db&&fbRef){
-    try{
-      const {set}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
-      await set(fbRef(db,'entries'),null);
-      await set(fbRef(db,'log'),null);
-      await set(fbRef(db,'resetAt'),new Date().toISOString());
-    }catch(e){console.warn('reset err',e);}
-  }
+}
+
+function deleteEntry(id){
+  if(!confirm('¿Seguro querés eliminar esta entrada?'))return;
+  window.entries = window.entries.filter(x=>x.id!==id);
+  saveLocal();
+  syncCloud();
+  renderEntries();
+}
+
+function clearAllEntries(){
+  if(!confirm('🚨 ATENCIÓN: Esto borrará TODAS las entradas generadas del sistema. ¿Continuar?'))return;
+  window.entries = [];
+  generatedCanvases = {};
+  saveLocal();
+  syncCloud();
+  renderEntries();
+  updateGeneratePanel();
   document.getElementById('entries-wrap').classList.add('hidden');
-  document.getElementById('import-result').classList.add('hidden');
-  document.getElementById('wa-bulk-wrap').classList.add('hidden');
-  renderEntries();updateStats();tab('import');
-  alert('Evento finalizado. Todo en cero para el proximo evento.');
 }
 
-function resetEvento(){
-  if(!confirm('FINALIZAR EVENTO\n\nEsto va a:\n1. Exportar el CSV con el registro actual\n2. Borrar entradas y registro\n3. Limpiar Firebase\n\nQuedar todo en cero para el proximo evento.\n\nConfirmar?'))return;
-  // Export CSV first
-  if(scanLog.length){
-    const headers = ['Estado','Nombre','Abono','Partido','Celular','Fecha y Hora'];
-    const rows = scanLog.map(l=>{
-      const counts=scanLog.filter(x=>x.abono===l.abono&&x.nombre===l.nombre).length;
-      return[counts>1?'RECHAZADO/DUPLICADO':'VALIDADO',l.nombre,l.abono||'',l.partido||'',l.celular||'',new Date(l.at).toLocaleString()];
-    });
-    const csv=[headers].concat(rows).map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));
-    a.download='registro_evento_'+new Date().toLocaleDateString('es-AR').replace(/\//g,'-')+'.csv';
-    a.click();
-  }
-  setTimeout(async()=>{
-    entries=[];scanLog=[];generatedCanvases={};people=[];
-    localStorage.removeItem('qrEntries');
-    localStorage.removeItem('qrLog');
-    if(useCloud&&db&&fbRef){
-      try{
-        const {set}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
-        await set(fbRef(db,'entries'),null);
-        await set(fbRef(db,'log'),null);
-        await set(fbRef(db,'resetAt'), new Date().toISOString()); // signal scanner to clear
-      }catch(e){console.warn('reset firebase err',e)}
+async function downloadZip(){
+  if(!window.entries.length)return;
+  const zip = new JSZip();
+  const folder = zip.folder("entradas_qr");
+  
+  const btn = event.target;
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Creando ZIP...";
+
+  for(let i=0; i<window.entries.length; i++){
+    const e = window.entries[i];
+    let dataURL = generatedCanvases[e.id];
+    if(!dataURL){
+      const c = document.createElement('canvas');
+      await drawCard(e, c);
+      dataURL = c.toDataURL('image/jpeg', 0.92);
     }
-    document.getElementById('entries-wrap').classList.add('hidden');
-    document.getElementById('import-result').classList.add('hidden');
-    document.getElementById('gen-prog').classList.add('hidden');
-    document.getElementById('wa-bulk-wrap').classList.add('hidden');
-    renderEntries();
-    updateStats();
-    tab('import');
-    alert('Evento finalizado. Todo en cero para el proximo evento.');
-  },800);
+    const base64Data = dataURL.split(',')[1];
+    folder.file(`entrada_${e.nombre.replace(/\s+/g,'_')}.jpg`, base64Data, {base64: true});
+  }
+
+  const content = await zip.generateAsync({type:"blob"});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(content);
+  a.download = "entradas_qr_evento.zip";
+  a.click();
+  
+  btn.disabled = false;
+  btn.textContent = origText;
 }
 
-// ========= BULK WHATSAPP =========
-let bulkIdx = 0;
+// Bulk WhatsApp State
 let bulkList = [];
+let bulkIdx = 0;
 
 function showBulkWA(){
-  if(!entries.length){alert('Generá las entradas primero');return}
-  bulkList = entries.filter(e=>e.celular);
-  if(!bulkList.length){alert('Ninguna entrada tiene número de celular');return}
+  bulkList = window.entries.filter(e => e.celular && e.celular.trim() !== '');
+  if(!bulkList.length){ alert('No hay entradas con celulares válidos cargados.'); return; }
   document.getElementById('wa-bulk-wrap').classList.remove('hidden');
-  document.getElementById('wa-bulk-wrap').scrollIntoView({behavior:'smooth'});
-  document.getElementById('wa-progress').textContent=`0 de ${bulkList.length} enviados`;
-  document.getElementById('wa-current').classList.add('hidden');
-  bulkIdx=0;
+  bulkIdx = 0;
+  updateBulkPanel();
 }
 
 function startBulkWA(){
-  if(!bulkList.length){showBulkWA();return}
-  bulkIdx=0;
-  showWACurrent();
+  if(!bulkList.length)return;
+  bulkIdx = 0;
+  updateBulkPanel();
 }
 
-function showWACurrent(){
-  if(bulkIdx>=bulkList.length){
+function updateBulkPanel(){
+  if(bulkIdx >= bulkList.length){
     document.getElementById('wa-current').classList.add('hidden');
-    document.getElementById('wa-progress').textContent=`✅ ¡Todos enviados! (${bulkList.length} de ${bulkList.length})`;
+    document.getElementById('wa-progress').textContent = `✅ ¡Todos enviados! (${bulkList.length} de ${bulkList.length})`;
     return;
   }
-  const e=bulkList[bulkIdx];
+  const e = bulkList[bulkIdx];
   document.getElementById('wa-current').classList.remove('hidden');
-  document.getElementById('wa-current-name').textContent=`${bulkIdx+1}. ${e.nombre}`;
-  document.getElementById('wa-current-info').textContent=`Celular: ${e.celular} · Abono: ${e.abono||'-'} · ${e.partido||''}`;
-  document.getElementById('wa-progress').textContent=`${bulkIdx} de ${bulkList.length} enviados`;
+  document.getElementById('wa-current-name').textContent = `${bulkIdx+1}. ${e.nombre}`;
+  document.getElementById('wa-current-info').textContent = `Celular: ${e.celular} · Abono: ${e.abono||'-'} · ${e.partido||''}`;
+  document.getElementById('wa-progress').textContent = `${bulkIdx} de ${bulkList.length} enviados`;
 }
 
 async function sendCurrentWA(){
-  const e=bulkList[bulkIdx];
+  const e = bulkList[bulkIdx];
   if(!e)return;
   
-  let dataURL=generatedCanvases[e.id];
+  let dataURL = generatedCanvases[e.id];
   if(!dataURL){
-    const c=document.createElement('canvas');
-    await drawCard(e,c);
-    dataURL=c.toDataURL('image/jpeg', 0.92);
+    const c = document.createElement('canvas');
+    await drawCard(e, c);
+    dataURL = c.toDataURL('image/jpeg', 0.92);
   }
   
-  // Copy to clipboard
   await copyImageToClipboard(dataURL);
   
   e.sent = true;
@@ -1047,20 +910,99 @@ async function sendCurrentWA(){
   syncCloud();
   renderEntries();
 
-  let num=e.celular.replace(/\D/g,'');
-  if(!num.startsWith('54')&&num.length<=10)num='54'+num;
-  const msg=encodeURIComponent(`Hola ${e.nombre}! Te envío tu entrada para ${e.partido||'el evento'}. Guardá la imagen y presentá el QR en el ingreso. Abono: ${e.abono||'-'}`);
-  setTimeout(()=>{
-    window.open(`https://wa.me/${num}?text=${msg}`,'_blank');
-    bulkIdx++;
-    showWACurrent();
-  },200);
+  let num = e.celular.replace(/\D/g,'');
+  if(!num.startsWith('54') && num.length <= 10) num = '54' + num;
+  const msg = encodeURIComponent(`Hola ${e.nombre}! Te envío tu entrada para ${e.partido||'el evento'}. Recordá tener el QR a mano al ingresar.`);
+  
+  window.open(`https://api.whatsapp.com/send?phone=${num}&text=${msg}`, '_blank');
+  
+  bulkIdx++;
+  updateBulkPanel();
 }
 
 function skipCurrentWA(){
   bulkIdx++;
-  showWACurrent();
+  updateBulkPanel();
 }
-</script>
-</body>
-</html>
+
+function closeModal(){ document.getElementById('modal').classList.add('hidden'); }
+
+// ========= LOG PANEL =========
+function updateStats(){
+  if(!window.entries) return;
+  const total = window.entries.length;
+  const used = window.scanLog.filter(l=>l.valido).length;
+  const pend = total - used;
+  const pct = total ? Math.round((used / total) * 100) : 0;
+
+  const elTotal = document.getElementById('st-total');
+  const elUsed = document.getElementById('st-used');
+  const elPend = document.getElementById('st-pend');
+  const elPct = document.getElementById('st-pct');
+
+  if(elTotal) elTotal.textContent = total;
+  if(elUsed) elUsed.textContent = used;
+  if(elPend) elPend.textContent = pend < 0 ? 0 : pend;
+  if(elPct) elPct.textContent = pct + '%';
+
+  const tbody = document.getElementById('log-tbody');
+  if(!tbody) return;
+  
+  if(!window.scanLog.length){
+    tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-gray-400 italic">Sin ingresos registrados aún</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = [...window.scanLog].reverse().map(l => `
+    <tr>
+      <td>
+        <span class="badge ${l.valido?'avail':'used'}">${l.valido?'ÉXITO':'RECHAZO'}</span>
+      </td>
+      <td class="font-semibold">${l.nombre}</td>
+      <td>${l.abono||'-'}</td>
+      <td class="muted" style="font-size:11px">${l.partido||'-'}</td>
+      <td class="font-mono text-blue-600">${new Date(l.at).toLocaleTimeString()}</td>
+    </tr>
+  `).join('');
+}
+
+function clearLog(){
+  if(!confirm('¿Estás seguro de vaciar el historial de ingresos actual?'))return;
+  window.scanLog = [];
+  saveLocal();
+  syncLogCloud();
+  updateStats();
+}
+
+async function resetEvento(){
+  if(!confirm('⚠️ ¿Finalizar Evento?\n\nEsto va a resetear todas las entradas actuales puestas en "INGRESÓ" volviéndolas a habilitar, y vaciará el registro de ingresos.'))return;
+  window.scanLog = [];
+  window.entries = window.entries.map(e => ({...e, used: false}));
+  saveLocal();
+  if(useCloud && db && _fbSet && _fbRef){
+    try {
+      await _fbSet(_fbRef(db, 'log'), []);
+      const slim = window.entries.map(e=>({
+        id:e.id, nombre:e.nombre, celular:e.celular||'',
+        abono:e.abono||'', partido:e.partido||'',
+        used:false, sent:e.sent||false, createdAt:e.createdAt
+      }));
+      await _fbSet(_fbRef(db, 'entries'), slim);
+      await _fbSet(_fbRef(db, 'resetAt'), new Date().toISOString());
+    } catch(e){ console.error(e); }
+  }
+  updateStats();
+  renderEntries();
+  alert('El evento fue finalizado. Todo listo para el próximo.');
+}
+
+function editEntry(id) {
+  console.log('Edit item:', id);
+}
+function saveEdit(id) {
+  console.log('Save item:', id);
+}
+
+function exportCSV(){
+  if(!window.scanLog.length){ alert('No hay datos para exportar'); return; }
+  const rows
