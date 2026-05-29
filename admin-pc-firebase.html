@@ -655,13 +655,15 @@ async function generateAll(){
   if(genRunning){return}
   genRunning = true; genPaused = false;
 
-  // REPLACE — don't accumulate
+  // REPLACE — don't accumulate, clear previous event data
   entries=people.map(p=>({
     id:uid(),nombre:p.nombre,celular:p.celular,abono:p.abono,partido:p.partido,
     used:false,waSent:false,createdAt:new Date().toISOString()
   }));
   generatedCanvases={};
+  scanLog=[];  // clear log from previous event
   saveLocal();
+  syncLogCloud();  // clear log in Firebase too
 
   const prog=document.getElementById('gen-prog');
   const fill=document.getElementById('pb-fill');
@@ -761,37 +763,27 @@ function renderEntries(){
 }
 
 // ========= ENTRY ACTIONS =========
-// Helper to copy dataURL image to clipboard
+// Helper to copy dataURL image to clipboard — uses canvas to avoid fetch issues
 async function copyImageToClipboard(dataURL) {
   try {
-    const response = await fetch(dataURL);
-    const blob = await response.blob();
-    await navigator.clipboard.write([
-      new ClipboardItem({ [blob.type]: blob })
-    ]);
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+    const img = new Image();
+    await new Promise((res, rej) => {
+      img.onload = () => {
+        c.width = img.width; c.height = img.height;
+        ctx.drawImage(img, 0, 0);
+        res();
+      };
+      img.onerror = rej;
+      img.src = dataURL;
+    });
+    const blob = await new Promise(res => c.toBlob(res, 'image/png'));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     return true;
   } catch (err) {
-    console.error('Error crítico al copiar imagen: ', err);
-    try {
-      const c = document.createElement('canvas');
-      const ctx = c.getContext('2d');
-      const img = new Image();
-      await new Promise((res, rej) => {
-        img.onload = () => {
-          c.width = img.width; c.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          c.toBlob(async (b) => {
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]);
-            res();
-          }, "image/png");
-        };
-        img.onerror = rej; img.src = dataURL;
-      });
-      return true;
-    } catch (e2) {
-      alert('Tu navegador bloqueó el copiado automático. Por favor, descarga la imagen y adjúntala manualmente.');
-      return false;
-    }
+    console.error('Error al copiar imagen al portapapeles:', err);
+    return false;
   }
 }
 
