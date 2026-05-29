@@ -951,6 +951,7 @@ function resetEvento(){
         const {set}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
         await set(fbRef(db,'entries'),null);
         await set(fbRef(db,'log'),null);
+        await set(fbRef(db,'resetAt'), new Date().toISOString()); // signal scanner to clear
       }catch(e){console.warn('reset firebase err',e)}
     }
     document.getElementById('entries-wrap').classList.add('hidden');
