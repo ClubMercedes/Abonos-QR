@@ -292,7 +292,7 @@ tr:hover td{background:var(--surf2)}
 
   <div id="wa-bulk-wrap" class="hidden card">
     <div class="card-title">📲 Envío masivo por WhatsApp</div>
-    <p class="muted" style="font-size:12px;margin-bottom:1rem">Hacé clic en cada botón — descarga la imagen y abre WhatsApp listo para enviar. Solo tocás Enviar.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:1rem">El sistema copia la imagen al portapapeles automáticamente. Al abrirse WhatsApp, hacé clic en el cuadro de texto y apretá <strong>Ctrl+V</strong> para pegar la imagen y enviala.</p>
     <div style="display:flex;gap:8px;margin-bottom:1rem;flex-wrap:wrap">
       <button class="btn gold" onclick="startBulkWA()">▶ Iniciar envío secuencial</button>
       <span class="muted" id="wa-progress" style="font-size:12px;align-self:center"></span>
@@ -334,7 +334,7 @@ tr:hover td{background:var(--surf2)}
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <div class="card-title" style="margin:0">Historial</div>
-      <div class="btn-row"><button class="btn sm" onclick="exportCSV()">⬇ CSV</button><button class="btn err sm" onclick="clearLog()">🗑 Limpiar registro</button></div>
+      <div class="btn-row"><button class="btn sm" onclick="exportCSV()">⬇ CSV</button><button class="btn err sm" onclick="clearLog()">🗑 Limpiar registro</button><button class="btn err sm" onclick="resetEvento()" style="background:#7c1d1d">🔄 Finalizar evento y resetear todo</button></div>
     </div>
     <div class="tw"><table>
       <thead><tr><th></th><th>Nombre</th><th>Abono</th><th>Partido</th><th>Hora ingreso</th><th>Motivo</th></tr></thead>
@@ -418,7 +418,7 @@ window.deleteEntry = deleteEntry;
 window.viewEntry = viewEntry;
 window.openWA = openWA;
 window.saveEdit = saveEdit;
-window.showBulkWA = showBulkWA;
+window.resetEvento = resetEvento;
 window.startBulkWA = startBulkWA;
 window.sendCurrentWA = sendCurrentWA;
 window.skipCurrentWA = skipCurrentWA;
@@ -761,22 +761,61 @@ function renderEntries(){
 }
 
 // ========= ENTRY ACTIONS =========
-function openWA(id){
+// ========= CLIPBOARD =========
+async function copyImageToClipboard(dataURL){
+  try{
+    const response = await fetch(dataURL);
+    const blob = await response.blob();
+    await navigator.clipboard.write([new ClipboardItem({[blob.type]: blob})]);
+    return true;
+  }catch(err){
+    // Plan B: forzar PNG explícito
+    try{
+      const c=document.createElement('canvas');
+      const ctx=c.getContext('2d');
+      const img=new Image();
+      await new Promise((res,rej)=>{
+        img.onload=()=>{
+          c.width=img.width; c.height=img.height;
+          ctx.drawImage(img,0,0);
+          c.toBlob(async(b)=>{
+            await navigator.clipboard.write([new ClipboardItem({"image/png":b})]);
+            res();
+          },"image/png");
+        };
+        img.onerror=rej; img.src=dataURL;
+      });
+      return true;
+    }catch(e2){
+      console.warn('Clipboard no disponible, se descarga la imagen');
+      return false;
+    }
+  }
+}
+
+// ========= ENTRY ACTIONS =========
+async function openWA(id){
   const e=entries.find(x=>x.id===id);if(!e)return;
   if(!e.celular){alert('Esta persona no tiene número de celular cargado');return}
   let num=e.celular.replace(/\D/g,'');
   if(!num.startsWith('54')&&num.length<=10)num='54'+num;
-  const dataURL=generatedCanvases[id];
-  if(dataURL){
+  let dataURL=generatedCanvases[id];
+  if(!dataURL){
+    const c=document.createElement('canvas');
+    await drawCard(e,c);
+    dataURL=c.toDataURL('image/jpeg',0.92);
+  }
+  // Intentar copiar al portapapeles
+  const copied = await copyImageToClipboard(dataURL);
+  if(!copied){
+    // Si falla el portapapeles, descargar la imagen
     const a=document.createElement('a');a.href=dataURL;
     a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';a.click();
   }
-  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}`);
-  setTimeout(()=>{
-    window.open(`https://wa.me/${num}?text=${msg}`,'_blank');
-    e.waSent=true;
-    saveLocal();syncCloud();renderEntries();
-  },600);
+  e.waSent=true;
+  saveLocal();syncCloud();renderEntries();
+  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}${copied?' (imagen copiada, pegar con Ctrl+V)':''}`);
+  setTimeout(()=>window.open(`https://wa.me/${num}?text=${msg}`,'_blank'),200);
 }
 
 function viewEntry(id){
@@ -871,12 +910,45 @@ function exportCSV(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));a.download='registro_ingresos.csv';a.click();
 }
 
+function resetEvento(){
+  if(!confirm('⚠️ FINALIZAR EVENTO\n\nEsto va a:\n1. Exportar el CSV con el registro actual\n2. Borrar todas las entradas\n3. Borrar todo el registro de ingresos\n4. Dejar todo en cero para el próximo evento\n\n¿Confirmar?'))return;
+  // First export CSV
+  if(scanLog.length){
+    const rows=[['Estado','Nombre','Abono','Partido','Celular','Hora','Motivo']].concat(
+      scanLog.map(l=>[l.valido?'Valido':'Rechazado',l.nombre,l.abono||'',l.partido||'',l.celular||'',new Date(l.at).toLocaleString(),l.motivo||''])
+    );
+    const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv'}));
+    a.download='registro_evento_'+new Date().toLocaleDateString('es-AR').replace(/\//g,'-')+'.csv';
+    a.click();
+  }
+  // Then clear everything
+  setTimeout(async()=>{
+    entries=[];scanLog=[];generatedCanvases={};people=[];
+    localStorage.removeItem('qrEntries');
+    localStorage.removeItem('qrLog');
+    if(useCloud&&db&&_fbSet&&_fbRef){
+      try{
+        await _fbSet(_fbRef(db,'entries'),null);
+        await _fbSet(_fbRef(db,'log'),null);
+      }catch(e){console.warn('reset firebase err',e)}
+    }
+    document.getElementById('entries-wrap').classList.add('hidden');
+    document.getElementById('import-result').classList.add('hidden');
+    document.getElementById('gen-prog').classList.add('hidden');
+    document.getElementById('wa-bulk-wrap').classList.add('hidden');
+    renderEntries();
+    updateStats();
+    tab('import');
+    alert('✅ Evento finalizado. Todo resetado para el próximo evento.');
+  },800);
+}
+
 function clearLog(){
   if(!confirm('¿Borrar todo el registro de ingresos?'))return;
   scanLog=[];saveLocal();syncLogCloud();updateStats();
 }
-
-// ========= BULK WHATSAPP =========
 let bulkIdx = 0;
 let bulkList = [];
 
@@ -910,29 +982,26 @@ function showWACurrent(){
   document.getElementById('wa-progress').textContent=`${bulkIdx} de ${bulkList.length} enviados`;
 }
 
-function sendCurrentWA(){
+async function sendCurrentWA(){
   const e=bulkList[bulkIdx];
   if(!e)return;
-  // download image
-  const dataURL=generatedCanvases[e.id];
-  if(dataURL){
-    const a=document.createElement('a');
-    a.href=dataURL;
-    a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';
-    a.click();
+  let dataURL=generatedCanvases[e.id];
+  if(!dataURL){const c=document.createElement('canvas');await drawCard(e,c);dataURL=c.toDataURL('image/jpeg',0.92)}
+  const copied = await copyImageToClipboard(dataURL);
+  if(!copied){
+    const a=document.createElement('a');a.href=dataURL;
+    a.download='entrada_'+e.nombre.replace(/\s+/g,'_')+'.jpg';a.click();
   }
-  // open whatsapp
+  const entry=entries.find(x=>x.id===e.id);
+  if(entry){entry.waSent=true;saveLocal();syncCloud();}
   let num=e.celular.replace(/\D/g,'');
   if(!num.startsWith('54')&&num.length<=10)num='54'+num;
-  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}`);
+  const msg=encodeURIComponent(`Hola ${e.nombre}, te enviamos tu entrada para ${e.partido||'el evento'}. Presenta el codigo QR en el ingreso. Nro Abono: ${e.abono||'-'}${copied?' (imagen copiada, pegar con Ctrl+V)':''}`);
   setTimeout(()=>{
     window.open(`https://wa.me/${num}?text=${msg}`,'_blank');
-    // mark as sent
-    const entry=entries.find(x=>x.id===e.id);
-    if(entry){entry.waSent=true;saveLocal();syncCloud();}
     bulkIdx++;
     showWACurrent();
-  },500);
+  },200);
 }
 
 function skipCurrentWA(){
