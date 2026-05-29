@@ -149,22 +149,6 @@ async function initFB(){
         updateStats();
       }
     });
-    // listen for reset signal from admin
-    onValue(ref(db,'resetAt'), snap=>{
-      const resetAt = snap.val();
-      if(!resetAt) return;
-      const lastReset = localStorage.getItem('lastResetAt');
-      if(resetAt !== lastReset){
-        // admin finalized event — clear all local data
-        localStorage.setItem('lastResetAt', resetAt);
-        scanLog = [];
-        localStorage.removeItem('scanLog');
-        entries = [];
-        renderLog();
-        updateStats();
-        showResult('idle','Listo para escanear','Evento reiniciado. Esperando nuevas entradas...');
-      }
-    });
     document.getElementById('dot').style.background = 'var(--ok)';
     document.getElementById('conn-lbl').textContent = 'Firebase conectado';
   }catch(e){
