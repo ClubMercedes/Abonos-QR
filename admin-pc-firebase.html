@@ -924,9 +924,11 @@ function updateStats(){
   
   document.getElementById('log-tbody').innerHTML=scanLog.length
     ?[...scanLog].reverse().map(l=>{
-        // Check if the QR has multiple logs (rejected/warning status)
-        const counts = scanLog.filter(x => x.abono === l.abono && x.nombre === l.nombre).length;
-        const isDuplicate = counts > 1;
+        // Find the earliest scan for this person (first entry = valid)
+        const samePerson = scanLog.filter(x => x.abono === l.abono && x.nombre === l.nombre);
+        const firstScan = samePerson.reduce((a,b) => new Date(a.at) < new Date(b.at) ? a : b);
+        const isFirst = l.at === firstScan.at;
+        const isDuplicate = samePerson.length > 1 && !isFirst;
         const indicator = isDuplicate ? '<span class="status-indicator invalid">❌</span>' : '<span class="status-indicator valid">🟢</span>';
         return `<tr>
           <td style="text-align:center">${indicator}</td>
