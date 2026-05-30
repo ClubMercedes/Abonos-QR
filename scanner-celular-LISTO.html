@@ -132,10 +132,11 @@ async function initFB(){
     // listen for entries in real time
     onValue(ref(db,'entries'), snap=>{
       const data = snap.val();
-      if(data && Array.isArray(data)){
-        // merge with local used state from scanLog
+      if(data){
+        // Firebase puede devolver objeto o array — normalizamos siempre
+        const arr = Array.isArray(data) ? data : Object.values(data);
         const usedIds = new Set(scanLog.filter(l=>l.valido).map(l=>l.id));
-        entries = data.map(e=>({...e, used: e.used || usedIds.has(e.id)}));
+        entries = arr.map(e=>({...e, used: e.used || usedIds.has(e.id)}));
       } else {
         // Admin borró las entradas — limpiar local
         entries = [];
