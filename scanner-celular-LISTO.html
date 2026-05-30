@@ -132,25 +132,12 @@ async function initFB(){
     // listen for entries in real time
     onValue(ref(db,'entries'), snap=>{
       const data = snap.val();
-      console.log('Firebase entries raw:', JSON.stringify(data).slice(0,300));
       if(data){
-        let arr;
-        if(Array.isArray(data)){
-          arr = data.filter(Boolean); // Firebase a veces mete null en pos 0
-        } else if(typeof data === 'object'){
-          arr = Object.values(data).filter(Boolean);
-        } else {
-          arr = [];
-        }
-        console.log('Entries procesadas:', arr.length);
+        const arr = Array.isArray(data) ? data : Object.values(data);
         const usedIds = new Set(scanLog.filter(l=>l.valido).map(l=>l.id));
-        entries = arr.map(e=>({...e, used: e.used || usedIds.has(e.id)}));
-        // Mostrar debug en pantalla temporalmente
-        document.getElementById('conn-lbl').textContent = 'Firebase OK · '+entries.length+' entradas';
+        entries = arr.filter(Boolean).map(e=>({...e, used: e.used || usedIds.has(e.id)}));
       } else {
-        console.log('Firebase entries: null/vacío');
         entries = [];
-        document.getElementById('conn-lbl').textContent = 'Firebase OK · 0 entradas';
       }
       updateStats();
     });
@@ -161,7 +148,6 @@ async function initFB(){
         scanLog = arr;
         localStorage.setItem('scanLog', JSON.stringify(scanLog));
       } else {
-        // Admin borró el log — limpiar local también
         scanLog = [];
         localStorage.removeItem('scanLog');
       }
@@ -210,8 +196,8 @@ async function validateCode(raw){
 
   const idx = entries.findIndex(e => e.id === data.id);
   if(idx === -1){
-    logScan({id:data.id||'?', nombre:data.nombre||'Desconocido', abono:data.abono||'', partido:data.partido||'', valido:false, motivo:'Entrada de otro evento'});
-    showResult('err','❌ QR inválido', (data.nombre||'Desconocido') + ' · ' + (data.abono||''), 'Esta entrada no corresponde al evento actual');
+    logScan({id:data.id||'?', nombre:data.nombre||'Desconocido', abono:data.abono||'', partido:data.partido||'', valido:false, motivo:'ID no registrado'});
+    showResult('err','❌ No encontrada','Esta entrada no está registrada');
     return;
   }
 
