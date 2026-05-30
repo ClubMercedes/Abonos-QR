@@ -132,14 +132,12 @@ async function initFB(){
     // listen for entries in real time
     onValue(ref(db,'entries'), snap=>{
       const data = snap.val();
-      if(data){
-        const arr = Array.isArray(data) ? data : Object.values(data);
+      if(data && Array.isArray(data)){
+        // merge with local used state from scanLog
         const usedIds = new Set(scanLog.filter(l=>l.valido).map(l=>l.id));
-        entries = arr.filter(Boolean).map(e=>({...e, used: e.used || usedIds.has(e.id)}));
-      } else {
-        entries = [];
+        entries = data.map(e=>({...e, used: e.used || usedIds.has(e.id)}));
+        updateStats();
       }
-      updateStats();
     });
     onValue(ref(db,'log'), snap=>{
       const data = snap.val();
@@ -147,12 +145,9 @@ async function initFB(){
         const arr = Array.isArray(data) ? data : Object.values(data);
         scanLog = arr;
         localStorage.setItem('scanLog', JSON.stringify(scanLog));
-      } else {
-        scanLog = [];
-        localStorage.removeItem('scanLog');
+        renderLog();
+        updateStats();
       }
-      renderLog();
-      updateStats();
     });
     // listen for reset signal from admin
     onValue(ref(db,'resetAt'), snap=>{
