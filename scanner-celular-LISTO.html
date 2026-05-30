@@ -132,14 +132,25 @@ async function initFB(){
     // listen for entries in real time
     onValue(ref(db,'entries'), snap=>{
       const data = snap.val();
+      console.log('Firebase entries raw:', JSON.stringify(data).slice(0,300));
       if(data){
-        // Firebase puede devolver objeto o array — normalizamos siempre
-        const arr = Array.isArray(data) ? data : Object.values(data);
+        let arr;
+        if(Array.isArray(data)){
+          arr = data.filter(Boolean); // Firebase a veces mete null en pos 0
+        } else if(typeof data === 'object'){
+          arr = Object.values(data).filter(Boolean);
+        } else {
+          arr = [];
+        }
+        console.log('Entries procesadas:', arr.length);
         const usedIds = new Set(scanLog.filter(l=>l.valido).map(l=>l.id));
         entries = arr.map(e=>({...e, used: e.used || usedIds.has(e.id)}));
+        // Mostrar debug en pantalla temporalmente
+        document.getElementById('conn-lbl').textContent = 'Firebase OK · '+entries.length+' entradas';
       } else {
-        // Admin borró las entradas — limpiar local
+        console.log('Firebase entries: null/vacío');
         entries = [];
+        document.getElementById('conn-lbl').textContent = 'Firebase OK · 0 entradas';
       }
       updateStats();
     });
