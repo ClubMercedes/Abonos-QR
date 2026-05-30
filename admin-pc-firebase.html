@@ -1,6 +1,6 @@
 
 
-
+```html
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -382,6 +382,7 @@ function saveLocal(){
 
 // cached firebase functions
 let _fbSet = null, _fbRef = null;
+let _unsubLog = null, _unsubEntries = null;
 
 async function syncCloud(){
   if(!useCloud||!db||!_fbSet||!_fbRef) return;
@@ -490,11 +491,11 @@ async function initFirebase(cfg){
     document.getElementById('sync-dot').style.background='var(--ok)';
     document.getElementById('sync-label').textContent='Firebase conectado';
     
-    onValue(ref(db,'log'), snap=>{
+    _unsubLog = onValue(ref(db,'log'), snap=>{
       const data = snap.val();
       if(data && Array.isArray(data)){ scanLog=data; saveLocal(); if(document.getElementById('panel-log').classList.contains('active'))updateStats(); }
     });
-    onValue(ref(db,'entries'), snap=>{
+    _unsubEntries = onValue(ref(db,'entries'), snap=>{
       const data = snap.val();
       if(data && Array.isArray(data)){ entries=data; saveLocal(); renderEntries(); updateStats(); }
     });
@@ -963,6 +964,57 @@ function exportCSV(){
   a.href=URL.createObjectURL(new Blob(['\uFEFF' + csvContent], {type:'text/csv;charset=utf-8;'}));
   a.download='registro_ingresos.csv';
   a.click();
+
+  // Ask to finalize and clear all data after download
+  setTimeout(()=>{
+    if(confirm('✅ CSV descargado correctamente.\n\n¿Finalizar el evento y borrar todos los registros?\n\nEsto borrará:\n• Todas las entradas generadas\n• El registro de ingresos\n• Los datos en Firebase y en el scanner\n\nEsta acción no se puede deshacer.')){
+      clearAllData();
+    }
+  }, 500);
+}
+
+async function clearAllData(){
+  // Detach Firebase listeners BEFORE wiping so they don't re-populate data
+  if(_unsubLog){ _unsubLog(); _unsubLog=null; }
+  if(_unsubEntries){ _unsubEntries(); _unsubEntries=null; }
+  entries=[];scanLog=[];generatedCanvases={};people=[];
+  localStorage.removeItem('qrEntries');
+  localStorage.removeItem('qrLog');
+  if(useCloud&&db&&_fbRef&&_fbSet){
+    try{
+      // Use remove() instead of set(null) — guarantees full deletion in Firebase
+      const {remove} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+      await remove(_fbRef(db,'entries'));
+      await remove(_fbRef(db,'log'));
+      // Write reset signal so scanner clears its local cache
+      await _fbSet(_fbRef(db,'resetAt'), new Date().toISOString());
+      // Extra wait to ensure Firebase propagates deletion before re-attaching listeners
+      await new Promise(r=>setTimeout(r,800));
+    }catch(e){console.warn('reset firebase err',e)}
+  }
+  // Reset file input so the same Excel can be re-uploaded
+  const fi = document.getElementById('fi');
+  fi.value = '';
+  document.getElementById('entries-wrap').classList.add('hidden');
+  document.getElementById('import-result').classList.add('hidden');
+  document.getElementById('gen-prog').classList.add('hidden');
+  document.getElementById('wa-bulk-wrap').classList.add('hidden');
+  renderEntries();
+  updateStats();
+  tab('import');
+  // Re-attach Firebase listeners so new scans are received after reset
+  if(useCloud&&db&&_fbRef){
+    const {onValue} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+    _unsubLog = onValue(_fbRef(db,'log'), snap=>{
+      const data = snap.val();
+      if(data && Array.isArray(data)){ scanLog=data; saveLocal(); if(document.getElementById('panel-log').classList.contains('active'))updateStats(); }
+    });
+    _unsubEntries = onValue(_fbRef(db,'entries'), snap=>{
+      const data = snap.val();
+      if(data && Array.isArray(data)){ entries=data; saveLocal(); renderEntries(); updateStats(); }
+    });
+  }
+  alert('✅ Evento finalizado. Todo en cero para el próximo evento.');
 }
 
 function clearLog(){
@@ -971,8 +1023,7 @@ function clearLog(){
 }
 
 function resetEvento(){
-  if(!confirm('FINALIZAR EVENTO\n\nEsto va a:\n1. Exportar el CSV con el registro actual\n2. Borrar entradas y registro\n3. Limpiar Firebase\n\nQuedar todo en cero para el proximo evento.\n\nConfirmar?'))return;
-  // Export CSV first
+  if(!confirm('FINALIZAR EVENTO\n\nEsto va a:\n1. Exportar el CSV con el registro actual\n2. Borrar entradas y registro\n3. Limpiar Firebase y el scanner\n\nQuedar todo en cero para el proximo evento.\n\nConfirmar?'))return;
   if(scanLog.length){
     const headers = ['Estado','Nombre','Abono','Partido','Celular','Fecha y Hora'];
     const rows = scanLog.map(l=>{
@@ -985,26 +1036,7 @@ function resetEvento(){
     a.download='registro_evento_'+new Date().toLocaleDateString('es-AR').replace(/\//g,'-')+'.csv';
     a.click();
   }
-  setTimeout(async()=>{
-    entries=[];scanLog=[];generatedCanvases={};people=[];
-    localStorage.removeItem('qrEntries');
-    localStorage.removeItem('qrLog');
-    if(useCloud&&db&&fbRef){
-      try{
-        const {set}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
-        await set(fbRef(db,'entries'),null);
-        await set(fbRef(db,'log'),null);
-      }catch(e){console.warn('reset firebase err',e)}
-    }
-    document.getElementById('entries-wrap').classList.add('hidden');
-    document.getElementById('import-result').classList.add('hidden');
-    document.getElementById('gen-prog').classList.add('hidden');
-    document.getElementById('wa-bulk-wrap').classList.add('hidden');
-    renderEntries();
-    updateStats();
-    tab('import');
-    alert('Evento finalizado. Todo en cero para el proximo evento.');
-  },800);
+  setTimeout(()=>clearAllData(), 800);
 }
 
 // ========= BULK WHATSAPP =========

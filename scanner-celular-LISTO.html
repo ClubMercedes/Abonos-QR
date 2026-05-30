@@ -136,8 +136,11 @@ async function initFB(){
         // merge with local used state from scanLog
         const usedIds = new Set(scanLog.filter(l=>l.valido).map(l=>l.id));
         entries = data.map(e=>({...e, used: e.used || usedIds.has(e.id)}));
-        updateStats();
+      } else {
+        // Admin borró las entradas — limpiar local
+        entries = [];
       }
+      updateStats();
     });
     onValue(ref(db,'log'), snap=>{
       const data = snap.val();
@@ -145,9 +148,13 @@ async function initFB(){
         const arr = Array.isArray(data) ? data : Object.values(data);
         scanLog = arr;
         localStorage.setItem('scanLog', JSON.stringify(scanLog));
-        renderLog();
-        updateStats();
+      } else {
+        // Admin borró el log — limpiar local también
+        scanLog = [];
+        localStorage.removeItem('scanLog');
       }
+      renderLog();
+      updateStats();
     });
     // listen for reset signal from admin
     onValue(ref(db,'resetAt'), snap=>{
