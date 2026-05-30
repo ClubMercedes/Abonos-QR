@@ -210,8 +210,8 @@ async function validateCode(raw){
 
   const idx = entries.findIndex(e => e.id === data.id);
   if(idx === -1){
-    logScan({id:data.id||'?', nombre:data.nombre||'Desconocido', abono:data.abono||'', partido:data.partido||'', valido:false, motivo:'ID no registrado'});
-    showResult('err','❌ No encontrada','Esta entrada no está registrada');
+    logScan({id:data.id||'?', nombre:data.nombre||'Desconocido', abono:data.abono||'', partido:data.partido||'', valido:false, motivo:'Entrada de otro evento'});
+    showResult('err','❌ QR inválido', (data.nombre||'Desconocido') + ' · ' + (data.abono||''), 'Esta entrada no corresponde al evento actual');
     return;
   }
 
