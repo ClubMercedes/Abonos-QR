@@ -405,6 +405,7 @@ tr:hover td{background:#fafbfe}
       <p class="sec-title" style="margin:0">Listado de entradas</p>
       <div class="btn-row">
         <button class="btn sm wa-btn" onclick="showBulkWA()">📲 Envío masivo WhatsApp</button>
+        <button class="btn sm ok" onclick="openAddEntry()">+ Agregar persona</button>
         <input type="text" id="search" placeholder="Buscar nombre, abono..." style="background:var(--surf2);border:1px solid var(--border2);border-radius:var(--r2);padding:6px 11px;color:var(--text);font-size:12px;outline:none;width:200px" oninput="renderEntries()"/>
       </div>
     </div>
@@ -438,6 +439,36 @@ tr:hover td{background:#fafbfe}
 </main>
 </div>
 
+<div id="modal-add-entry" class="modal-bg hidden">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAddEntry()">✕</button>
+    <h3>+ Agregar persona</h3>
+    <div class="field-inline">
+      <label>Nombre completo</label>
+      <input type="text" id="add-nombre" placeholder="Ej: GARCIA JUAN"/>
+    </div>
+    <div class="field-inline">
+      <label>Celular (con código de país)</label>
+      <input type="text" id="add-celular" placeholder="Ej: 5491123456789"/>
+    </div>
+    <div class="g2">
+      <div class="field-inline">
+        <label>Nro Abono</label>
+        <input type="text" id="add-abono" placeholder="Ej: F-0099"/>
+      </div>
+      <div class="field-inline">
+        <label>Partido</label>
+        <input type="text" id="add-partido" placeholder="Ej: paraguayo"/>
+      </div>
+    </div>
+    <div class="hint">El QR se va a generar automáticamente al guardar.</div>
+    <div class="btn-row mt">
+      <button class="btn gold" onclick="saveAddEntry()">✓ Guardar y generar QR</button>
+      <button class="btn" onclick="closeAddEntry()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <div id="modal" class="modal-bg hidden">
   <div class="modal">
     <button class="modal-close" onclick="closeModal()">✕</button>
@@ -446,7 +477,7 @@ tr:hover td{background:#fafbfe}
   </div>
 </div>
 
-<script type="module">
+<script>
 // ========= FIREBASE (lazy loaded) =========
 let db = null, fbRef = null;
 let useCloud = false;
@@ -1193,6 +1224,57 @@ async function sendCurrentWA(){
 function skipCurrentWA(){
   bulkIdx++;
   showWACurrent();
+}
+
+// ── AGREGAR PERSONA MANUAL ──────────────────────────────
+function openAddEntry(){
+  document.getElementById('add-nombre').value='';
+  document.getElementById('add-celular').value='';
+  document.getElementById('add-abono').value='';
+  document.getElementById('add-partido').value='';
+  document.getElementById('modal-add-entry').classList.remove('hidden');
+}
+
+function closeAddEntry(){
+  document.getElementById('modal-add-entry').classList.add('hidden');
+}
+
+async function saveAddEntry(){
+  const nombre  = document.getElementById('add-nombre').value.trim().toUpperCase();
+  const celular = document.getElementById('add-celular').value.trim();
+  const abono   = document.getElementById('add-abono').value.trim();
+  const partido = document.getElementById('add-partido').value.trim();
+
+  if(!nombre){ alert('El nombre es obligatorio'); return; }
+  if(!abono){  alert('El nro de abono es obligatorio'); return; }
+
+  const nueva = { id:uid(), nombre, celular, abono, partido, used:false, sent:false, createdAt:new Date().toISOString() };
+
+  // Generar el QR
+  const c = document.createElement('canvas');
+  await drawCard(nueva, c);
+  generatedCanvases[nueva.id] = c.toDataURL('image/jpeg', 0.92);
+  c.width=0; c.height=0;
+
+  // Agregar a la lista y guardar
+  entries.push(nueva);
+  saveLocal();
+
+  // Subir a Firebase si está conectado
+  if(window.db){
+    try{
+      await window.db.ref('entries/'+nueva.id).set({
+        nombre:nueva.nombre, celular:nueva.celular,
+        abono:nueva.abono, partido:nueva.partido,
+        used:false, dataURL:generatedCanvases[nueva.id],
+        createdAt:nueva.createdAt
+      });
+    }catch(e){ console.warn('Firebase upload failed', e); }
+  }
+
+  closeAddEntry();
+  renderEntries();
+  alert('✅ '+ nombre +' agregado con QR generado. Podés enviarlo por WhatsApp desde la lista.');
 }
 </script>
 </body>
