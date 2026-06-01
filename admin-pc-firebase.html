@@ -894,7 +894,10 @@ function renderEntries(){
   document.getElementById('entries-tbody').innerHTML=filtered.map((e,i)=>`
     <tr>
       <td>${i+1}</td>
-      <td style="text-align:center"><input type="checkbox" ${e.sent?'checked':''} onclick="toggleSentStatus('${e.id}', this)" style="transform: scale(1.2); cursor:pointer;"></td>
+      <td style="text-align:center;white-space:nowrap">${e.sent 
+        ? '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#eef7f2;border:1px solid #c5e4d4;font-size:13px;color:#5aaa82;font-weight:700">✓</span>'
+        : '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:#f7f9fc;border:1px solid #dde3ec;font-size:13px;color:#b0b8c8">—</span>'
+      }</td>
       <td>${e.nombre}</td>
       <td>${e.celular||'-'}</td>
       <td>${e.abono||'-'}</td>
@@ -1206,6 +1209,9 @@ async function sendCurrentWA(){
   // Copy to clipboard
   await copyImageToClipboard(dataURL);
   
+  // Mark as sent in the original entries array
+  const orig = entries.find(x => x.id === e.id);
+  if(orig) orig.sent = true;
   e.sent = true;
   saveLocal();
   syncCloud();
