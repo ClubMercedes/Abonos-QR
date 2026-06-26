@@ -974,7 +974,7 @@ async function openWA(id){
   syncCloud();
   renderEntries();
 
-  const msg=encodeURIComponent(`Hola ${e.nombre}! Adjunto tu entrada para ${e.partido||'el evento'}. Presentá el código QR en el ingreso. No la compartas. Nro Abono: ${e.abono||'-'}`);
+  const msg=encodeURIComponent(`Hola ${e.nombre}! Adjunto tu entrada para ${e.partido||'el evento'}. Presentá el código QR en el ingreso por PLATEA. No la compartas. Nro Abono: ${e.abono||'-'}`);
   setTimeout(()=>window.open(`https://wa.me/${num}?text=${msg}`,'_blank'),200);
 }
 
