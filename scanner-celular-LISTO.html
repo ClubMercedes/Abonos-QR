@@ -115,6 +115,8 @@ let entries = [];
 let scanLog = JSON.parse(localStorage.getItem('scanLog')||'[]');
 let stream = null, scanInterval = null;
 let lastScan = '', lastScanTime = 0;
+let scanCooldownUntil = 0; // mientras Date.now() sea menor a esto, se ignoran lecturas nuevas
+const SCAN_COOLDOWN_MS = 3000; // pausa (ms) después de cada lectura antes de aceptar otra
 
 window.startCam = startCam;
 window.stopCam = stopCam;
@@ -176,6 +178,7 @@ async function initFB(){
 
 // ======= VALIDATE =======
 async function validateCode(raw){
+  scanCooldownUntil = Date.now() + SCAN_COOLDOWN_MS;
   let data;
   try{ data = JSON.parse(raw); }
   catch(e){
@@ -238,12 +241,13 @@ function showResult(type, title, sub, detail=''){
   const el = document.getElementById('result');
   el.className = 'result ' + type;
   el.innerHTML = `<div class="icon">${{ok:'✅',err:'❌',idle:'📷'}[type]||'📷'}</div><div class="title">${title}</div><div class="sub">${sub}</div>${detail?`<div class="detail">${detail}</div>`:''}`;
-  if(type !== 'idle') setTimeout(()=>showResult('idle','Listo para escanear','Activá la cámara o usá el lector QR'), 4000);
+  // El mensaje ya no se borra solo: queda visible hasta la próxima lectura.
 }
 
 function validateManual(){
   const val = document.getElementById('manual').value.trim();
   if(!val) return;
+  if(Date.now() < scanCooldownUntil) return; // en pausa: ignora envíos repetidos
   validateCode(val);
   document.getElementById('manual').value = '';
   document.getElementById('manual').focus();
@@ -271,17 +275,15 @@ function stopCam(){
 
 function scanFrame(video){
   if(video.readyState !== video.HAVE_ENOUGH_DATA) return;
+  if(Date.now() < scanCooldownUntil) return; // en pausa: ignora cualquier QR frente a cámara
   const c = document.createElement('canvas');
   c.width = video.videoWidth; c.height = video.videoHeight;
   c.getContext('2d').drawImage(video, 0, 0);
   const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
   const code = jsQR(img.data, img.width, img.height);
   if(code){
-    const now = Date.now();
-    if(code.data !== lastScan || now - lastScanTime > 3500){
-      lastScan = code.data; lastScanTime = now;
-      validateCode(code.data);
-    }
+    lastScan = code.data; lastScanTime = Date.now();
+    validateCode(code.data);
   }
 }
 
