@@ -1047,14 +1047,9 @@ function updateStats(){
   
   document.getElementById('log-tbody').innerHTML=scanLog.length
     ?[...scanLog].reverse().map(l=>{
-        // Mark QR invalido entries always as invalid
-        const isInvalidQR = !l.abono || l.nombre === 'QR invalido' || l.nombre === 'QR inválido';
-        // Find the earliest scan for this person (first entry = valid)
-        const samePerson = scanLog.filter(x => x.abono === l.abono && x.nombre === l.nombre);
-        const firstScan = samePerson.reduce((a,b) => new Date(a.at) < new Date(b.at) ? a : b);
-        const isFirst = l.at === firstScan.at;
-        const isDuplicate = samePerson.length > 1 && !isFirst;
-        const indicator = (isInvalidQR || isDuplicate) ? '<span class="status-indicator invalid">✕ Duplicado</span>' : '<span class="status-indicator valid">✓ OK</span>';
+        const indicator = l.valido
+          ? '<span class="status-indicator valid">✓ OK</span>'
+          : `<span class="status-indicator invalid">✕ ${l.motivo||'Rechazado'}</span>`;
         return `<tr>
           <td style="text-align:center">${indicator}</td>
           <td>${l.nombre}</td>
@@ -1070,8 +1065,7 @@ function exportCSV(){
   if(!scanLog.length){alert('No hay registros');return}
   const headers = ['Estado', 'Nombre', 'Abono', 'Partido', 'Celular', 'Fecha y Hora'];
   const rows = scanLog.map(l => {
-    const counts = scanLog.filter(x => x.abono === l.abono && x.nombre === l.nombre).length;
-    const estadoText = counts > 1 ? 'RECHAZADO/DUPLICADO' : 'VALIDADO';
+    const estadoText = l.valido ? 'VALIDADO' : (l.motivo ? l.motivo.toUpperCase() : 'RECHAZADO');
     return [
       estadoText,
       l.nombre,
@@ -1155,8 +1149,8 @@ function resetEvento(){
   if(scanLog.length){
     const headers = ['Estado','Nombre','Abono','Partido','Celular','Fecha y Hora'];
     const rows = scanLog.map(l=>{
-      const counts=scanLog.filter(x=>x.abono===l.abono&&x.nombre===l.nombre).length;
-      return[counts>1?'RECHAZADO/DUPLICADO':'VALIDADO',l.nombre,l.abono||'',l.partido||'',l.celular||'',new Date(l.at).toLocaleString()];
+      const estadoText = l.valido ? 'VALIDADO' : (l.motivo ? l.motivo.toUpperCase() : 'RECHAZADO');
+      return[estadoText,l.nombre,l.abono||'',l.partido||'',l.celular||'',new Date(l.at).toLocaleString()];
     });
     const csv=[headers].concat(rows).map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
     const a=document.createElement('a');
