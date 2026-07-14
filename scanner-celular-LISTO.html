@@ -112,6 +112,7 @@ const FIREBASE_CFG = {
 
 let db = null, _fbRef = null, _fbUpdate = null;
 let entries = [];
+let currentPartido = null;
 let scanLog = JSON.parse(localStorage.getItem('scanLog')||'[]');
 let stream = null, scanInterval = null;
 let lastScan = '', lastScanTime = 0;
@@ -140,6 +141,9 @@ async function initFB(){
         entries = data.map(e=>({...e, used: e.used || usedIds.has(e.id)}));
         updateStats();
       }
+    });
+    onValue(ref(db,'currentPartido'), snap=>{
+      currentPartido = snap.val() || null;
     });
     onValue(ref(db,'log'), snap=>{
       const data = snap.val();
@@ -184,6 +188,13 @@ async function validateCode(raw){
   catch(e){
     logScan({id:'?', nombre:'QR invalido', abono:'', partido:'', valido:false, motivo:'QR no reconocido'});
     showResult('err','❌ QR inválido','No corresponde a una entrada');
+    return;
+  }
+
+  const norm = s => (s||'').toString().trim().toLowerCase().replace(/\s+/g,' ');
+  if(currentPartido && norm(data.partido) !== norm(currentPartido)){
+    logScan({id:data.id||'?', nombre:data.nombre||'Desconocido', abono:data.abono||'', partido:data.partido||'', valido:false, motivo:'QR de otro evento'});
+    showResult('err','❌ QR de otro evento', 'Este QR es de "'+(data.partido||'?')+'"', 'Evento activo: "'+currentPartido+'"');
     return;
   }
 
@@ -237,10 +248,52 @@ async function logScan(entry){
   }
 }
 
+let audioCtx = null;
+function playBeep(){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const t = audioCtx.currentTime;
+    [523,659,784].forEach(freq=>{
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.exponentialRampToValueAtTime(0.18, t+0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, t+0.28);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(t); osc.stop(t+0.3);
+    });
+  }catch(e){ console.error('Beep error', e); }
+}
+
+function playReject(){
+  if(navigator.vibrate){
+    navigator.vibrate([180,90,180]);
+    return;
+  }
+  // iPhone/Safari no soporta vibración: sonido de respaldo
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(420, t);
+    osc.frequency.linearRampToValueAtTime(180, t+0.35);
+    gain.gain.setValueAtTime(0.15, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t+0.35);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(t); osc.stop(t+0.37);
+  }catch(e){ console.error('Reject sound error', e); }
+}
+
 function showResult(type, title, sub, detail=''){
   const el = document.getElementById('result');
   el.className = 'result ' + type;
   el.innerHTML = `<div class="icon">${{ok:'✅',err:'❌',idle:'📷'}[type]||'📷'}</div><div class="title">${title}</div><div class="sub">${sub}</div>${detail?`<div class="detail">${detail}</div>`:''}`;
+  if(type==='ok') playBeep();
+  else if(type==='err') playReject();
   // El mensaje ya no se borra solo: queda visible hasta la próxima lectura.
 }
 

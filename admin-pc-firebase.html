@@ -508,8 +508,13 @@ async function syncCloud(){
       used:e.used, sent:e.sent||false, createdAt:e.createdAt
     }));
     await _fbSet(_fbRef(db,'entries'), slim);
-    console.log('✅ Subido a Firebase:', slim.length, 'entradas');
-  }catch(e){ console.error('Sync error',e); }
+    const partidoActivo = entries.find(e=>e.partido)?.partido || '';
+    await _fbSet(_fbRef(db,'currentPartido'), partidoActivo);
+    console.log('✅ Subido a Firebase:', slim.length, 'entradas · evento:', partidoActivo);
+  }catch(e){
+    console.error('Sync error',e);
+    alert('⚠️ No se pudo sincronizar con Firebase. El escáner puede seguir mostrando datos viejos.\n\nRevisá tu conexión y volvé a generar las entradas.\n\nDetalle: '+e.message);
+  }
 }
 
 async function syncLogCloud(){
@@ -1108,6 +1113,7 @@ async function clearAllData(){
       const {remove} = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
       await remove(_fbRef(db,'entries'));
       await remove(_fbRef(db,'log'));
+      await remove(_fbRef(db,'currentPartido'));
       // Write reset signal so scanner clears its local cache
       await _fbSet(_fbRef(db,'resetAt'), new Date().toISOString());
       // Extra wait to ensure Firebase propagates deletion before re-attaching listeners
