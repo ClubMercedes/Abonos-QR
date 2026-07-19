@@ -116,6 +116,8 @@ let currentPartido = null;
 let scanLog = JSON.parse(localStorage.getItem('scanLog')||'[]');
 let stream = null, scanInterval = null;
 let lastScan = '', lastScanTime = 0;
+let missedFrames = 0;
+const MISSED_FRAMES_TO_CLEAR = 6; // ~1.5s sin detectar el código (a 250ms por frame) antes de asumir que salió de cuadro
 let scanCooldownUntil = 0; // mientras Date.now() sea menor a esto, se ignoran lecturas nuevas
 const SCAN_COOLDOWN_MS = 3000; // pausa (ms) después de cada lectura antes de aceptar otra
 
@@ -343,6 +345,7 @@ function scanFrame(video){
   const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
   const code = jsQR(img.data, img.width, img.height);
   if(code){
+    missedFrames = 0;
     // Solo procesa si es un código distinto al que ya estaba en cuadro
     // (evita releer el mismo QR mientras sigue frente a la cámara).
     if(code.data !== lastScan){
@@ -350,7 +353,10 @@ function scanFrame(video){
       validateCode(code.data);
     }
   } else {
-    lastScan = ''; // el QR salió de cuadro: habilitado para leer de nuevo
+    missedFrames++;
+    if(missedFrames >= MISSED_FRAMES_TO_CLEAR){
+      lastScan = ''; // varios frames seguidos sin detectar nada: recién ahí asumimos que salió de cuadro
+    }
   }
 }
 
