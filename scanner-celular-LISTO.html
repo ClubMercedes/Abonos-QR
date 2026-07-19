@@ -226,24 +226,23 @@ async function validateCode(raw){
   localStorage.setItem('scanLog', JSON.stringify(scanLog));
   renderLog();
 
-  // Update Firebase: "usado" + historial en UNA sola escritura atómica,
-  // para que nunca quede marcado como usado sin su registro en el historial.
+  // Avisar al operador (cartel + sonido) de inmediato, sin esperar a Firebase.
+  showResult('ok','✅ Ingreso válido', entry.nombre, entry.partido||(entry.abono?'Abono: '+entry.abono:''));
+  updateStats();
+
+  // Update Firebase EN SEGUNDO PLANO: "usado" + historial en UNA sola escritura atómica
+  // (para que nunca quede marcado como usado sin su registro en el historial),
+  // sin bloquear el aviso al operador si no hay conexión en el momento.
   if(db && _fbRef && _fbUpdate){
     const doWrite = () => _fbUpdate(_fbRef(db), {
       ['entries/'+idx+'/used']: true,
       ['log']: [...scanLog]
     });
-    try{
-      await doWrite();
-    }catch(e){
+    doWrite().catch(e=>{
       console.warn('sync err, reintentando...', e);
-      try{ await doWrite(); }catch(e2){ console.warn('sync err (2do intento)', e2); }
-    }
+      doWrite().catch(e2=>console.warn('sync err (2do intento)', e2));
+    });
   }
-
-  showResult('ok','✅ Ingreso válido', entry.nombre, entry.partido||(entry.abono?'Abono: '+entry.abono:''));
-  updateStats();
-  renderLog();
 }
 
 async function logScan(entry){
