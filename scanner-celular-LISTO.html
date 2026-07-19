@@ -219,15 +219,24 @@ async function validateCode(raw){
 
   // Mark as used
   entries[idx].used = true;
-  logScan({id:entry.id, nombre:entry.nombre, abono:entry.abono||'', partido:entry.partido||'', valido:true, motivo:''});
+  const logEntry = {id:entry.id, nombre:entry.nombre, abono:entry.abono||'', partido:entry.partido||'', valido:true, motivo:'', at:new Date().toISOString()};
+  scanLog.push(logEntry);
+  localStorage.setItem('scanLog', JSON.stringify(scanLog));
+  renderLog();
 
-  // Update Firebase
+  // Update Firebase: "usado" + historial en UNA sola escritura atómica,
+  // para que nunca quede marcado como usado sin su registro en el historial.
   if(db && _fbRef && _fbUpdate){
+    const doWrite = () => _fbUpdate(_fbRef(db), {
+      ['entries/'+idx+'/used']: true,
+      ['log']: [...scanLog]
+    });
     try{
-      await _fbUpdate(_fbRef(db, 'entries/'+idx), {used: true});
-      const logArr = [...scanLog];
-      await _fbUpdate(_fbRef(db), {log: logArr});
-    }catch(e){ console.warn('sync err', e); }
+      await doWrite();
+    }catch(e){
+      console.warn('sync err, reintentando...', e);
+      try{ await doWrite(); }catch(e2){ console.warn('sync err (2do intento)', e2); }
+    }
   }
 
   showResult('ok','✅ Ingreso válido', entry.nombre, entry.partido||(entry.abono?'Abono: '+entry.abono:''));
@@ -328,15 +337,20 @@ function stopCam(){
 
 function scanFrame(video){
   if(video.readyState !== video.HAVE_ENOUGH_DATA) return;
-  if(Date.now() < scanCooldownUntil) return; // en pausa: ignora cualquier QR frente a cámara
   const c = document.createElement('canvas');
   c.width = video.videoWidth; c.height = video.videoHeight;
   c.getContext('2d').drawImage(video, 0, 0);
   const img = c.getContext('2d').getImageData(0, 0, c.width, c.height);
   const code = jsQR(img.data, img.width, img.height);
   if(code){
-    lastScan = code.data; lastScanTime = Date.now();
-    validateCode(code.data);
+    // Solo procesa si es un código distinto al que ya estaba en cuadro
+    // (evita releer el mismo QR mientras sigue frente a la cámara).
+    if(code.data !== lastScan){
+      lastScan = code.data; lastScanTime = Date.now();
+      validateCode(code.data);
+    }
+  } else {
+    lastScan = ''; // el QR salió de cuadro: habilitado para leer de nuevo
   }
 }
 
