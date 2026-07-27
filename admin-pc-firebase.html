@@ -619,6 +619,14 @@ async function initFirebase(cfg){
       const data = snap.val();
       if(data && Array.isArray(data)){ entries=data; saveLocal(); renderEntries(); updateStats(); }
     });
+    onValue(ref(db,'designConfig'), snap=>{
+      const cfg = snap.val();
+      if(cfg){
+        applyDesignConfig(cfg);
+        const sample=people.length?{...people[0],id:'PREV'}:entries.length?entries[0]:{nombre:'Juan Pérez',abono:'A-001',partido:'Partido 1',id:'PREV'};
+        drawCard(sample, document.getElementById('prev-canvas'));
+      }
+    });
     document.getElementById('loading-screen').style.display='none';
     showApp();
   }catch(e){
@@ -781,7 +789,43 @@ function schedPreview(){
     const sample=people.length?{...people[0],id:'PREV'}:entries.length?entries[0]:{nombre:'Juan Pérez',abono:'A-001',partido:'Partido 1',id:'PREV'};
     const c=document.getElementById('prev-canvas');
     await drawCard(sample,c);
+    saveDesignConfig();
   },300);
+}
+
+// ========= DISEÑO: guardar/cargar logo + leyenda desde Firebase =========
+function getDesignConfig(){
+  return {
+    logoDataURL: logoDataURL||null,
+    legend: document.getElementById('legend').value,
+    legendSz: document.getElementById('legend-sz').value,
+    legendGap: document.getElementById('legend-gap').value,
+    logoH: document.getElementById('logo-h').value,
+    logoGap: document.getElementById('logo-gap').value,
+    bg: document.getElementById('c-bg').value,
+    qrCol: document.getElementById('c-qr').value,
+    txtCol: document.getElementById('c-txt').value,
+    qrSz: document.getElementById('qr-sz').value
+  };
+}
+
+function saveDesignConfig(){
+  if(!useCloud||!db||!_fbSet||!_fbRef) return;
+  _fbSet(_fbRef(db,'designConfig'), getDesignConfig()).catch(e=>console.warn('No se pudo guardar el diseño', e));
+}
+
+function applyDesignConfig(cfg){
+  if(!cfg) return;
+  if(cfg.logoDataURL){ logoDataURL=cfg.logoDataURL; document.getElementById('logo-name').textContent='✅ Logo cargado'; }
+  if(cfg.legend!=null) document.getElementById('legend').value=cfg.legend;
+  if(cfg.legendSz!=null) document.getElementById('legend-sz').value=cfg.legendSz;
+  if(cfg.legendGap!=null) document.getElementById('legend-gap').value=cfg.legendGap;
+  if(cfg.logoH!=null) document.getElementById('logo-h').value=cfg.logoH;
+  if(cfg.logoGap!=null) document.getElementById('logo-gap').value=cfg.logoGap;
+  if(cfg.bg) document.getElementById('c-bg').value=cfg.bg;
+  if(cfg.qrCol) document.getElementById('c-qr').value=cfg.qrCol;
+  if(cfg.txtCol) document.getElementById('c-txt').value=cfg.txtCol;
+  if(cfg.qrSz!=null) document.getElementById('qr-sz').value=cfg.qrSz;
 }
 
 // ========= GENERATE =========
