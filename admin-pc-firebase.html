@@ -375,6 +375,7 @@ tr:hover td{background:#fafbfe}
       <button class="btn gold" id="btn-gen" onclick="generateAll()">📦 Generar todas y subir a la nube</button>
       <button class="btn hidden" id="btn-pause" onclick="togglePause()">⏸ Pausar</button>
       <button class="btn" onclick="downloadZip()">⬇ Descargar ZIP</button>
+      <button class="btn sm" onclick="exportEntriesCSV()">⬇ CSV de entradas</button>
       <button class="btn err sm" onclick="clearAllEntries()">🗑 Borrar todas las entradas</button>
     </div>
     <div id="gen-prog" class="hidden mt">
@@ -538,6 +539,7 @@ window.downloadZip = downloadZip;
 window.clearAllEntries = clearAllEntries;
 window.renderEntries = renderEntries;
 window.exportCSV = exportCSV;
+window.exportEntriesCSV = exportEntriesCSV;
 window.clearLog = clearLog;
 window.resetEvento = resetEvento;
 window.closeModal = closeModal;
@@ -1111,6 +1113,28 @@ function updateStats(){
         </tr>`;
       }).join('')
     :'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Sin registros aún</td></tr>';
+}
+
+// Exporta el listado completo de entradas (nombre, abono, partido, estado)
+// para tener un respaldo ANTES de tocar "Finalizar evento", ya que esa acción
+// borra todo de Firebase sin posibilidad de recuperarlo después.
+function exportEntriesCSV(){
+  if(!entries.length){alert('No hay entradas generadas');return}
+  const headers = ['Nombre', 'Abono', 'Partido', 'Celular', 'Estado'];
+  const rows = entries.map(e => [
+    e.nombre,
+    e.abono || '',
+    e.partido || '',
+    e.celular || '',
+    e.used ? 'Usado' : 'Disponible'
+  ]);
+  const csvContent = [headers].concat(rows)
+    .map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','))
+    .join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF' + csvContent], {type:'text/csv;charset=utf-8;'}));
+  a.download='entradas_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
 }
 
 function exportCSV(){
