@@ -325,33 +325,33 @@ tr:hover td{background:#fafbfe}
         <div id="logo-name" class="muted mt" style="font-size:11px"></div>
         <div class="field-inline mt">
           <label>Altura del logo (px)</label>
-          <input type="number" id="logo-h" value="55" min="20" max="120" oninput="schedPreview()"/>
+          <input type="number" id="logo-h" value="55" min="20" max="120" oninput="schedPreview();scheduleSaveDesign()"/>
         </div>
         <div class="field-inline">
           <label>Espaciado bajo el logo (px)</label>
-          <input type="number" id="logo-gap" value="5" min="0" max="40" oninput="schedPreview()"/>
+          <input type="number" id="logo-gap" value="5" min="0" max="40" oninput="schedPreview();scheduleSaveDesign()"/>
         </div>
       </div>
       <div class="card">
         <div class="card-title">📝 Leyenda inferior</div>
         <div class="field-inline">
           <label>Texto (una línea por renglón)</label>
-          <textarea id="legend" placeholder="Ej: Club Mercedes&#10;Temporada 2026&#10;No transferible" oninput="schedPreview()"></textarea>
+          <textarea id="legend" placeholder="Ej: Club Mercedes&#10;Temporada 2026&#10;No transferible" oninput="schedPreview();scheduleSaveDesign()"></textarea>
         </div>
         <div class="g2">
-          <div class="field-inline"><label>Tamaño (px)</label><input type="number" id="legend-sz" value="11" min="8" max="20" oninput="schedPreview()"/></div>
-          <div class="field-inline"><label>Espaciado sup (px)</label><input type="number" id="legend-gap" value="8" min="0" max="30" oninput="schedPreview()"/></div>
+          <div class="field-inline"><label>Tamaño (px)</label><input type="number" id="legend-sz" value="11" min="8" max="20" oninput="schedPreview();scheduleSaveDesign()"/></div>
+          <div class="field-inline"><label>Espaciado sup (px)</label><input type="number" id="legend-gap" value="8" min="0" max="30" oninput="schedPreview();scheduleSaveDesign()"/></div>
         </div>
       </div>
       <div class="card">
         <div class="card-title">🎨 Colores</div>
-        <div class="field-inline"><label>Fondo</label><div class="crow"><input type="color" id="c-bg" value="#ffffff" oninput="schedPreview()"/><span class="muted">Fondo de la tarjeta</span></div></div>
-        <div class="field-inline"><label>Módulos QR</label><div class="crow"><input type="color" id="c-qr" value="#000000" oninput="schedPreview()"/><span class="muted">Color del código QR</span></div></div>
-        <div class="field-inline"><label>Texto</label><div class="crow"><input type="color" id="c-txt" value="#111111" oninput="schedPreview()"/><span class="muted">Nombre, datos, leyenda</span></div></div>
+        <div class="field-inline"><label>Fondo</label><div class="crow"><input type="color" id="c-bg" value="#ffffff" oninput="schedPreview();scheduleSaveDesign()"/><span class="muted">Fondo de la tarjeta</span></div></div>
+        <div class="field-inline"><label>Módulos QR</label><div class="crow"><input type="color" id="c-qr" value="#000000" oninput="schedPreview();scheduleSaveDesign()"/><span class="muted">Color del código QR</span></div></div>
+        <div class="field-inline"><label>Texto</label><div class="crow"><input type="color" id="c-txt" value="#111111" oninput="schedPreview();scheduleSaveDesign()"/><span class="muted">Nombre, datos, leyenda</span></div></div>
       </div>
       <div class="card">
         <div class="card-title">📐 Tamaño QR</div>
-        <div class="field-inline"><label>Tamaño del QR (px)</label><input type="number" id="qr-sz" value="200" min="120" max="300" step="10" oninput="schedPreview()"/></div>
+        <div class="field-inline"><label>Tamaño del QR (px)</label><input type="number" id="qr-sz" value="200" min="120" max="300" step="10" oninput="schedPreview();scheduleSaveDesign()"/></div>
       </div>
     </div>
     <div style="flex:0 0 auto;min-width:220px">
@@ -722,7 +722,7 @@ function downloadTemplate(){
 function loadLogo(input){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=e=>{logoDataURL=e.target.result;document.getElementById('logo-name').textContent='✅ '+file.name;schedPreview()};
+  reader.onload=e=>{logoDataURL=e.target.result;document.getElementById('logo-name').textContent='✅ '+file.name;schedPreview();scheduleSaveDesign()};
   reader.readAsDataURL(file);
 }
 
@@ -789,8 +789,16 @@ function schedPreview(){
     const sample=people.length?{...people[0],id:'PREV'}:entries.length?entries[0]:{nombre:'Juan Pérez',abono:'A-001',partido:'Partido 1',id:'PREV'};
     const c=document.getElementById('prev-canvas');
     await drawCard(sample,c);
-    saveDesignConfig();
   },300);
+}
+
+let designSaveTimer = null;
+function scheduleSaveDesign(){
+  // Guarda el diseño SOLO cuando el usuario realmente edita un campo
+  // (nunca al abrir la página o cambiar de pestaña), para no pisar
+  // con valores en blanco el diseño ya guardado en Firebase.
+  clearTimeout(designSaveTimer);
+  designSaveTimer = setTimeout(saveDesignConfig, 600);
 }
 
 // ========= DISEÑO: guardar/cargar logo + leyenda desde Firebase =========
